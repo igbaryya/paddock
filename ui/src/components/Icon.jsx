@@ -32,6 +32,29 @@ const PATHS = {
   chevron: ['M9 5l7 7-7 7'],
   external: ['M14 4h6v6', 'M20 4l-8 8', 'M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4'],
   check: ['M4 12.5 9.5 18 20 6.5'],
+  // Database: the stacked cylinder, three bands — two would read as a pill at 16px.
+  database: [
+    'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z',
+    'M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6',
+    'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
+  ],
+  // Theme: short rays, so the sun keeps its disc at 16px instead of becoming an asterisk.
+  sun: [
+    'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
+    'M12 2.5v1.5', 'M12 20v1.5', 'M2.5 12H4', 'M20 12h1.5',
+    'M5.3 5.3l1 1', 'M17.7 17.7l1 1', 'M5.3 18.7l1-1', 'M17.7 6.3l1-1',
+  ],
+  moon: ['M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'],
+  monitor: ['M3.5 5h17v11h-17z', 'M9 20h6', 'M12 16v4'],
+  // Settings: two sliders rather than a gear. A gear's teeth turn to noise at 16px on this 2px stroke.
+  settings: [
+    'M4 7h8',
+    'M16 7h4',
+    'M14 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+    'M4 17h3',
+    'M11 17h9',
+    'M9 15a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
+  ],
 };
 
 /**

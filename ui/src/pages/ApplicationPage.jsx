@@ -1,5 +1,6 @@
 /**
- * One application in full: its controls, every process, and the log tail.
+ * One application in full: its controls, every process, and the log tail — and for a PostgreSQL
+ * application, the SQL console between them.
  *
  * `application` is null both before the first fetch and when the id in the URL does not exist, and
  * those are different situations — a link someone saved after deleting the application should say
@@ -7,6 +8,7 @@
  */
 import ApplicationPane from '../components/ApplicationPane.jsx';
 import LogViewer from '../components/LogViewer.jsx';
+import SqlConsole from '../components/SqlConsole.jsx';
 import { Link, paths } from '../router.jsx';
 
 /**
@@ -65,10 +67,17 @@ export default function ApplicationPage({
         onDeleteProcess={onDeleteProcess}
       />
 
+      {/* Keyed by application like the logs below: a query and its result belong to one server. The
+          two keys must differ — they are siblings, and siblings sharing a key leave a stale console
+          behind on the next application. */}
+      {application.kind === 'postgres' && (
+        <SqlConsole key={`sql:${application.id}`} application={application} />
+      )}
+
       {/* Keyed by application: the log tab and stream filter belong to the application being looked
           at, and carrying a process id across a switch would filter out everything. */}
       <LogViewer
-        key={application.id}
+        key={`logs:${application.id}`}
         application={application}
         logs={logs}
         onClear={onClearLogs}

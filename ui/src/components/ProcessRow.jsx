@@ -35,10 +35,21 @@ const exitSummary = (process) => {
 };
 
 /**
- * @param {{process: object, now: number, busy: boolean, stale: boolean,
- *          onAction: (action: string) => void, onEdit: () => void, onDelete: () => void}} props
+ * @param {{process: object, now: number, busy: boolean, stale: boolean, pathLabel?: string,
+ *          onAction: (action: string) => void, onEdit: (() => void)|null,
+ *          onDelete: (() => void)|null}} props `onEdit` and `onDelete` are null for a process that
+ *   is derived rather than configured — a PostgreSQL server — and their buttons are then not drawn
  */
-export default function ProcessRow({ process, now, busy, stale, onAction, onEdit, onDelete }) {
+export default function ProcessRow({
+  process,
+  now,
+  busy,
+  stale,
+  pathLabel = 'repo',
+  onAction,
+  onEdit,
+  onDelete,
+}) {
   const envCount = Object.keys(process.env ?? {}).length;
   const exit = exitSummary(process);
   // A process cannot be started twice, but it must always be stoppable: the manager keeps the
@@ -61,7 +72,7 @@ export default function ProcessRow({ process, now, busy, stale, onAction, onEdit
       </div>
 
       <dl className="process-facts">
-        <dt>repo</dt>
+        <dt>{pathLabel}</dt>
         <dd><code>{process.repositoryPath}</code></dd>
         <dt>run</dt>
         <dd><code className="cmd">{process.command}</code></dd>
@@ -131,24 +142,28 @@ export default function ProcessRow({ process, now, busy, stale, onAction, onEdit
           Restart
         </button>
         <span className="spacer" />
-        <button
-          type="button"
-          className="btn small ghost"
-          aria-label={`Edit ${process.name}`}
-          onClick={onEdit}
-        >
-          <Icon name="pencil" />
-          Edit
-        </button>
-        <button
-          type="button"
-          className="btn small ghost danger"
-          aria-label={`Delete ${process.name}`}
-          onClick={onDelete}
-        >
-          <Icon name="trash" />
-          Delete
-        </button>
+        {onEdit && (
+          <button
+            type="button"
+            className="btn small ghost"
+            aria-label={`Edit ${process.name}`}
+            onClick={onEdit}
+          >
+            <Icon name="pencil" />
+            Edit
+          </button>
+        )}
+        {onDelete && (
+          <button
+            type="button"
+            className="btn small ghost danger"
+            aria-label={`Delete ${process.name}`}
+            onClick={onDelete}
+          >
+            <Icon name="trash" />
+            Delete
+          </button>
+        )}
       </div>
     </li>
   );

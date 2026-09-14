@@ -9,7 +9,9 @@
  * `/api/events` is not in this table: SSE owns its response for the life of the connection, so
  * `server.js` routes it straight to `http/events.js` before the request reaches here.
  */
-import { json, noContent, readJsonBody, httpErrorStatus, badRequest } from './respond.js';
+import {
+  json, noContent, readJsonBody, httpErrorStatus, badRequest, databaseErrorFields, errorMessage,
+} from './respond.js';
 import * as service from '../service.js';
 
 const route = (method, pattern, handler) => ({
@@ -60,6 +62,13 @@ const routes = [
   route('GET', '/api/applications/:appId/logs', ({ params, url }) =>
     service.readLogs(logQuery(params.appId, url))),
 
+  // The SQL console of a PostgreSQL application. POST for the statement even when it only reads:
+  // it carries a body, and it is nothing a browser should ever send on its own.
+  route('GET', '/api/applications/:appId/databases', ({ params }) =>
+    service.listDatabases(params.appId)),
+  route('POST', '/api/applications/:appId/sql', async ({ params, req }) =>
+    service.runStatement(params.appId, await readJsonBody(req))),
+
   // POST, not GET: it puts a dialog on the user's screen, and a GET is something a browser may send
   // on its own (a prefetch, a restored tab).
   route('POST', '/api/workspace/pick', async ({ req }) =>
@@ -68,6 +77,13 @@ const routes = [
   route('GET', '/api/workspace/inspect', ({ url }) => service.inspectDirectory(pathQuery(url))),
 
   route('GET', '/api/favicons', () => service.listFavicons()),
+
+  // Dashboard-only, like Browse: what is on this machine is for the human adding an application,
+  // and there is no MCP tool that could act on it.
+  route('GET', '/api/postgres/discover', () => service.discoverClusters()),
+
+  route('GET', '/api/settings', () => service.getSettings()),
+  route('PATCH', '/api/settings', async ({ req }) => service.updateSettings(await readJsonBody(req))),
 
   route('GET', '/api/ports', ({ url }) =>
     service.listPorts({ force: url.searchParams.get('force') === '1' })),
@@ -166,10 +182,13 @@ function sendError(res, status, err) {
   }
   // A 500 is our bug, not the caller's: the client gets a message, we keep the stack.
   if (status >= 500) console.error('[paddock] api request failed:', err);
+  const database = databaseErrorFields(err);
   json(res, status, {
     error: {
-      message: err?.message ?? 'Internal error',
+      message: err ? errorMessage(err) : 'Internal error',
       code: CODE_BY_STATUS[status] ?? 'internal_error',
+      // The SQL console points at the mistake with these; they are PostgreSQL's, not the API's.
+      ...(database ? { database } : {}),
     },
   });
 }

@@ -59,13 +59,19 @@ function enqueue(job) {
 /**
  * Forward migrations by `doc.version`. Version 1 is the only shape so far, so this only fills in
  * missing fields — but it stays, and it stays tolerant: the file is plain JSON in the user's data
- * directory and a hand-edited one must not throw its way into data loss.
+ * directory and a hand-edited one must not throw its way into data loss. An application written
+ * before PostgreSQL applications existed is a group of processes, which is what `kind` defaults to.
  * @param {object} doc
  */
 function migrate(doc) {
   const applications = asArray(doc.applications)
     .filter(isObject)
-    .map((app) => ({ ...app, processes: asArray(app.processes).filter(isObject) }));
+    .map((app) => ({
+      kind: 'processes',
+      postgres: null,
+      ...app,
+      processes: asArray(app.processes).filter(isObject),
+    }));
   return { ...doc, version: CURRENT_VERSION, applications };
 }
 

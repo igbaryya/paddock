@@ -16,6 +16,7 @@ import ProcessForm from './components/ProcessForm.jsx';
 import OverviewPage from './pages/OverviewPage.jsx';
 import ApplicationPage from './pages/ApplicationPage.jsx';
 import PortsPage from './pages/PortsPage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 
 /**
  * `updateProcess` flags the process whose configuration changed under a running instance. The
@@ -109,7 +110,10 @@ export default function App() {
     });
 
   const deleteApplication = (application) => {
-    const message = `Delete "${application.name}"? Its processes are stopped first.`;
+    // A PostgreSQL server is not Paddock's to stop on the way out; deleting only forgets it.
+    const message = application.kind === 'postgres'
+      ? `Delete "${application.name}"? The PostgreSQL server is left as it is — running or not.`
+      : `Delete "${application.name}"? Its processes are stopped first.`;
     if (!window.confirm(message)) return;
     // Leave the page first: the route for a deleted application would otherwise render its own
     // "no such application" state, which reads like something went wrong.
@@ -218,6 +222,16 @@ export default function App() {
             onRefresh={() => refreshPorts({ force: true })}
             onStopPort={stopPort}
             onProcessAction={runProcess}
+          />
+        )}
+
+        {route.name === 'settings' && (
+          <SettingsPage
+            applications={applications}
+            isBusy={(applicationId) => busy.has(applicationId)}
+            onAutoStart={(applicationId, autoStart) =>
+              run(applicationId, () => api.updateApplication(applicationId, { autoStart }))
+            }
           />
         )}
 

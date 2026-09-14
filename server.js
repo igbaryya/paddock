@@ -19,7 +19,7 @@ import { handleMcp } from './http/mcp.js';
 import { handleStatic } from './http/static.js';
 import { loginShellPath } from './platform/index.js';
 import { reapOrphans, killAllSync } from './process-manager.js';
-import { loadFavicons, shutdown as shutdownService } from './service.js';
+import { autoStartApplications, loadFavicons, shutdown as shutdownService } from './service.js';
 
 /** Bounded because it costs a login shell startup (~0.5 s) and is only a best-effort improvement. */
 const PATH_RESOLVE_TIMEOUT_MS = 3_000;
@@ -100,8 +100,21 @@ function isLocalRequest(req) {
   return !origin || LOCAL_HOSTNAMES.has(hostnameOf(origin));
 }
 
+let markReady;
+
+/**
+ * Settles once startup has finished reaping. The port is bound before that (see `main`), so a request
+ * can arrive while the reaper is still reading runtime.json — and one that starts a process then would
+ * write a record the reaper could validate and kill. Every request waits here instead; at startup that
+ * is milliseconds, and afterwards it is an already-settled promise.
+ */
+const ready = new Promise((resolve) => {
+  markReady = resolve;
+});
+
 /** @param {import('http').IncomingMessage} req @param {import('http').ServerResponse} res */
 async function route(req, res) {
+  await ready;
   const url = parseTarget(req);
   if (!url) {
     return json(res, 400, { error: { message: 'malformed request target', code: 'bad_request' } });
@@ -184,18 +197,46 @@ async function shutdown(signal) {
   process.exit(0);
 }
 
+/** Resolves once the port is ours; a taken port never resolves, because `server.on('error')` exits. */
+const listen = () => new Promise((resolve) => server.listen(PORT, HOST, resolve));
+
 async function main() {
   await mergeLoginShellPath();
+  // The port is bound BEFORE reaping, and that order is the whole point. runtime.json is shared by
+  // every Paddock on this data directory, and the reaper treats each record in it as a run that is
+  // over. A second copy started while one is already running — `npm start` out of habit with the
+  // login agent up — would otherwise kill every service the first copy supervises, and only then
+  // discover the port is taken. Holding the port first makes that second copy exit having touched
+  // nothing.
+  await listen();
   // Best-effort: leftovers from a previous run are not a reason to refuse to come up.
   await reapOrphans().catch((err) => console.error(`[paddock] orphan reap failed: ${err.message}`));
   // A cache: an unreadable one costs icons until each service runs again, not the startup.
   await loadFavicons().catch((err) => console.error(`[paddock] favicon cache unreadable: ${err.message}`));
   startEvents();
-  server.listen(PORT, HOST, () => {
-    const { port } = server.address();
-    console.log(`[paddock] UI   http://${displayHost}:${port}`);
-    console.log(`[paddock] MCP  http://${displayHost}:${port}/mcp`);
+  markReady();
+  // Printed last, so the line means "usable" — tests and scripts/dev.js wait for it.
+  const { port } = server.address();
+  console.log(`[paddock] UI   http://${displayHost}:${port}`);
+  console.log(`[paddock] MCP  http://${displayHost}:${port}/mcp`);
+  // Last, and not awaited. After the port is held, so a second copy never starts anything; after the
+  // reaper, so a leftover from a crashed run has released its port before its replacement binds it;
+  // and after the startup line, so the dashboard is usable while the applications come up in it.
+  autoStart();
+}
+
+/** One line per auto-started application, naming whatever did not come up and why. */
+async function autoStart() {
+  const outcomes = await autoStartApplications().catch((err) => {
+    console.error(`[paddock] auto-start failed: ${err.message}`);
+    return [];
   });
+  for (const { name, results, error } of outcomes) {
+    const failed = results.filter((result) => !result.ok);
+    const detail = error ?? failed.map((result) => `${result.name}: ${result.error ?? result.status}`).join(', ');
+    const up = `${results.length - failed.length}/${results.length} up`;
+    console.error(`[paddock] auto-start ${name}: ${detail ? `${up} — ${detail}` : up}`);
+  }
 }
 
 // Node hands the handler the signal name, so one handler body serves all three.

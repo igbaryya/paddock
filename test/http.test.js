@@ -13,6 +13,7 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
@@ -316,6 +317,174 @@ test('REST: create, add a process, list, get, patch and delete round-trips throu
   assert.equal((await api(`/api/applications/${created.id}`)).status, 404);
 });
 
+// With Paddock running as a login agent, starting a second copy by hand is the expected mistake. The
+// second copy shares the data directory, and its orphan reaper treats every record in runtime.json as
+// belonging to a dead run — so if it reaped before discovering the port was taken, it would kill every
+// service the running copy supervises and only then exit.
+test('a second instance on a taken port exits without touching the running one\'s services', async () => {
+  const app = await createApplication('second-instance');
+  await postJson(`/api/applications/${app.id}/processes`, {
+    name: 'survivor',
+    repositoryPath: repoDir,
+    command: 'sleep 30',
+  });
+  const started = (await postJson(`/api/applications/${app.id}/start`, {})).json();
+  const { pid } = started.application.processes[0];
+  assert.equal(started.results[0].status, 'running');
+
+  // The record is written asynchronously after the spawn; the reaper can only kill what is recorded.
+  const runtimeFile = path.join(dataDir, 'runtime.json');
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const raw = await fs.readFile(runtimeFile, 'utf8').catch(() => '');
+    if (raw.includes(`"pgid": ${pid}`)) break;
+    assert.ok(Date.now() < deadline, `runtime.json never recorded pgid ${pid}: ${raw}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  const second = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT_DIR,
+    env: {
+      ...process.env,
+      PADDOCK_DATA_DIR: dataDir,
+      PADDOCK_PORT: String(port),
+      PADDOCK_HOST: '127.0.0.1',
+      PADDOCK_ENV_FILE: path.join(dataDir, 'absent.env'),
+      PADDOCK_REAP_ORPHANS: 'true',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  second.stderr.setEncoding('utf8');
+  second.stderr.on('data', (chunk) => { stderr += chunk; });
+  const [code] = await once(second, 'exit');
+
+  assert.equal(code, 1, `the second instance should refuse to start: ${stderr}`);
+  assert.match(stderr, /already in use/);
+  assert.doesNotMatch(stderr, /reaped/);
+  assert.doesNotThrow(() => process.kill(pid, 0), 'the running instance\'s service was killed');
+  const view = (await api(`/api/applications/${app.id}`)).json();
+  assert.equal(view.processes[0].status, 'running');
+
+  await postJson(`/api/applications/${app.id}/stop`, {});
+});
+
+/**
+ * A Paddock of its own, on its own data directory, resolved once it prints its startup line — for
+ * the tests that are about a server starting, which the shared one has already done.
+ * @param {string} ownDataDir
+ * @returns {Promise<{child: import('node:child_process').ChildProcess, base: string,
+ *                    output: () => string}>} `output` is everything it has printed so far
+ */
+async function spawnPaddock(ownDataDir) {
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: ROOT_DIR,
+    env: {
+      ...process.env,
+      PADDOCK_DATA_DIR: ownDataDir,
+      PADDOCK_PORT: '0',
+      PADDOCK_HOST: '127.0.0.1',
+      PADDOCK_ENV_FILE: path.join(ownDataDir, 'absent.env'),
+      PADDOCK_REAP_ORPHANS: 'false',
+      PADDOCK_START_SETTLE_MS: '200',
+      PADDOCK_STOP_GRACE_MS: '2000',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => { output += chunk; });
+  child.stderr.on('data', (chunk) => { output += chunk; });
+  for (const deadline = Date.now() + SERVER_START_TIMEOUT_MS; ;) {
+    const match = output.match(/UI\s+http:\/\/127\.0\.0\.1:(\d+)/);
+    if (match) return { child, base: `http://127.0.0.1:${match[1]}`, output: () => output };
+    assert.ok(Date.now() < deadline && child.exitCode === null, `server never came up: ${output}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
+const stopPaddock = async ({ child }) => {
+  if (child.exitCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill('SIGTERM');
+  await exited;
+};
+
+// Through a real restart: the flag is written by one Paddock and acted on by the next, which is the
+// only way to prove it survives on disk and runs at startup rather than whenever the flag is set.
+test('a restarted Paddock starts the applications marked to auto-start, and only those', async () => {
+  const ownDataDir = await fs.mkdtemp(path.join(os.tmpdir(), 'paddock-autostart-'));
+  const ownRepo = path.join(ownDataDir, 'repo');
+  await fs.mkdir(ownRepo);
+  const request = (base, p, method = 'GET', body) =>
+    fetch(`${base}${p}`, {
+      method,
+      headers: body ? { 'Content-Type': 'application/json' } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    }).then((res) => res.json());
+
+  let paddock = await spawnPaddock(ownDataDir);
+  try {
+    const ids = {};
+    for (const [name, autoStart] of [['marked', true], ['unmarked', false]]) {
+      const app = await request(paddock.base, '/api/applications', 'POST', { name, autoStart });
+      await request(paddock.base, `/api/applications/${app.id}/processes`, 'POST', {
+        name: 'svc', repositoryPath: ownRepo, command: 'sleep 30',
+      });
+      ids[name] = app.id;
+    }
+    await stopPaddock(paddock);
+
+    paddock = await spawnPaddock(ownDataDir);
+    const statusOf = async (id) => (await request(paddock.base, `/api/applications/${id}`)).processes[0].status;
+    for (const deadline = Date.now() + 10_000; (await statusOf(ids.marked)) !== 'running';) {
+      assert.ok(Date.now() < deadline, `the marked application never came up: ${paddock.output()}`);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(await statusOf(ids.unmarked), 'stopped');
+    assert.match(paddock.output(), /auto-start marked: 1\/1 up/);
+  } finally {
+    await stopPaddock(paddock);
+    await fs.rm(ownDataDir, { recursive: true, force: true });
+  }
+});
+
+test('GET /api/settings reports the login switch and this copy', async () => {
+  const res = await api('/api/settings');
+  assert.equal(res.status, 200);
+  const { startAtLogin, instance } = res.json();
+  assert.equal(typeof startAtLogin.enabled, 'boolean');
+  assert.equal(typeof startAtLogin.location, 'string');
+  assert.ok(Array.isArray(startAtLogin.problems));
+  // This server was spawned by the suite, not by a login entry.
+  assert.equal(startAtLogin.launchedAtLogin, false);
+  assert.deepEqual(
+    { pid: instance.pid, installDir: instance.installDir, dataDir: instance.dataDir },
+    { pid: server.pid, installDir: ROOT_DIR, dataDir }
+  );
+});
+
+// Only the refusals are exercised here: a successful PATCH would write the entry into the real home
+// directory of whoever runs the suite. The entries themselves are covered in login-item.test.js.
+test('PATCH /api/settings refuses a startAtLogin that is not a boolean, and an empty patch changes nothing', async () => {
+  const before = (await api('/api/settings')).json();
+
+  const refused = await api('/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ startAtLogin: 'yes' }),
+  });
+  assert.equal(refused.status, 400);
+  assert.match(refused.json().error.message, /startAtLogin must be true or false/);
+
+  const empty = await api('/api/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(empty.status, 200);
+  assert.equal(empty.json().startAtLogin.enabled, before.startAtLogin.enabled);
+});
+
 test('GET /api/health reports ok and the server pid', async () => {
   const res = await api('/api/health');
   assert.equal(res.status, 200);
@@ -561,7 +730,7 @@ test('MCP initialize returns the paddock server info over SSE framing', async ()
   assert.match(res.message.result.instructions, /list_applications/);
 });
 
-test('MCP tools/list returns exactly the twelve contract tools', async () => {
+test('MCP tools/list returns exactly the twenty-one contract tools', async () => {
   const res = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   assert.equal(res.status, 200);
   const names = res.message.result.tools.map((t) => t.name).sort();
@@ -578,7 +747,59 @@ test('MCP tools/list returns exactly the twelve contract tools', async () => {
     'list_listening_ports',
     'get_port_info',
     'stop_port',
+    'cluster_info',
+    'list_databases',
+    'list_schemas',
+    'list_tables',
+    'describe_table',
+    'query',
+    'execute',
+    'create_database',
+    'drop_database',
   ].sort());
+});
+
+test('MCP database tools refuse an application that is not a PostgreSQL one, naming why', async () => {
+  const app = await createApplication('mcp-not-postgres');
+  const res = await mcp({
+    jsonrpc: '2.0',
+    id: 20,
+    method: 'tools/call',
+    params: { name: 'list_databases', arguments: { application_id: app.id } },
+  });
+  assert.equal(res.message.result.isError, true);
+  assert.match(res.message.result.content[0].text, /ValidationError: .*not a PostgreSQL application/);
+});
+
+test('MCP database tools against a server that is not running say so, instead of trying to connect', async () => {
+  const clusterDir = path.join(dataDir, `stopped-cluster-${++appCounter}`);
+  await fs.mkdir(clusterDir);
+  await fs.writeFile(path.join(clusterDir, 'PG_VERSION'), '16\n');
+  const created = await postJson('/api/applications', {
+    name: `pg-stopped-${appCounter}`,
+    kind: 'postgres',
+    postgres: { dataDirectory: clusterDir, port: 1 },
+  });
+  assert.equal(created.status, 200, created.text);
+
+  const res = await mcp({
+    jsonrpc: '2.0',
+    id: 21,
+    method: 'tools/call',
+    params: { name: 'cluster_info', arguments: { application_id: created.json().id } },
+  });
+  assert.equal(res.message.result.isError, true);
+  assert.match(res.message.result.content[0].text, /ValidationError: .*is stopped — start it first/);
+});
+
+test('POST /api/applications with kind postgres and a directory initdb never touched is a 400', async () => {
+  const res = await postJson('/api/applications', {
+    name: `pg-not-a-cluster-${++appCounter}`,
+    kind: 'postgres',
+    postgres: { dataDirectory: repoDir },
+  });
+  assert.equal(res.status, 400, res.text);
+  assert.match(res.json().error.message, /PG_VERSION/);
 });
 
 test('MCP list_applications succeeds when the client sends no arguments member at all', async () => {

@@ -6,6 +6,9 @@
  * caller owns; nothing above platform/ needs to know any of this exists.
  */
 import { execFile } from 'child_process';
+import { existsSync } from 'fs';
+import fs from 'fs/promises';
+import path from 'path';
 import { promisify } from 'util';
 
 const run = promisify(execFile);
@@ -212,20 +215,22 @@ export async function processSnapshot() {
 }
 
 /**
- * Working directory and executable of a pid, in one call — `cwd` and `txt` are just two of the
- * process's open files to lsof. The executable is worth the trouble because `ps -o comm=` is
- * argv[0] as the process chose to present it: npm rewrites its title to "npm run dev", so it is a
- * description and never a path.
+ * Working directory, executable and stderr of a pid, in one call — `cwd`, `txt` and fd 2 are just
+ * three of the process's open files to lsof. The executable is worth the trouble because
+ * `ps -o comm=` is argv[0] as the process chose to present it: npm rewrites its title to
+ * "npm run dev", so it is a description and never a path. stderr is how a daemon started with its
+ * output redirected (`pg_ctl -l`) says where its log is.
  *
  * lsof exits 1 with no output both for a process with nothing readable and for one we may not
  * inspect, so null here means "could not look" — never "there is none".
  * @param {number} pid
- * @returns {Promise<{workingDirectory: string|null, executablePath: string|null}>}
+ * @returns {Promise<{workingDirectory: string|null, executablePath: string|null,
+ *                    stderrPath: string|null}>}
  */
 export async function processPaths(pid) {
-  const empty = { workingDirectory: null, executablePath: null };
+  const empty = { workingDirectory: null, executablePath: null, stderrPath: null };
   if (!isPid(pid)) return empty;
-  const stdout = await readCommand(LSOF, ['-b', '-w', '-a', '-p', String(pid), '-d', 'cwd,txt', '-Ffn']);
+  const stdout = await readCommand(LSOF, ['-b', '-w', '-a', '-p', String(pid), '-d', 'cwd,txt,2', '-Ffn']);
   const paths = { ...empty };
   let fd = null;
   for (const line of stdout.split('\n')) {
@@ -234,6 +239,8 @@ export async function processPaths(pid) {
     // A process maps several files as `txt` (the binary, then its shared libraries); the first is
     // the executable itself.
     else if (line.startsWith('n') && fd === 'txt') paths.executablePath ??= line.slice(1);
+    // A pipe or a socket is named `->0x…` or `pipe`; only a path is a file someone can open.
+    else if (line.startsWith('n/') && fd === '2') paths.stderrPath ??= line.slice(1);
   }
   return paths;
 }
@@ -359,6 +366,188 @@ export async function pickDirectory(request) {
     status: 'unavailable',
     reason: hasDisplay() ? 'no folder dialog found — install zenity or kdialog' : 'no display to open a dialog on',
   };
+}
+
+// --- login item ------------------------------------------------------------------------------
+
+const LAUNCHCTL = '/bin/launchctl';
+
+/** launchd is on every Mac and on no Linux — the same test-for-the-tool that picks a folder dialog. */
+const hasLaunchd = () => existsSync(LAUNCHCTL);
+
+const launchAgentFile = ({ home, label }) => path.join(home, 'Library', 'LaunchAgents', `${label}.plist`);
+
+const linuxLauncherFile = ({ launcherDir }) => path.join(launcherDir, 'paddock-login.sh');
+
+function xdgAutostartFile({ home }) {
+  const configured = process.env.XDG_CONFIG_HOME?.trim();
+  // The XDG spec says a relative XDG_CONFIG_HOME is invalid and must be ignored.
+  const base = configured && path.isAbsolute(configured) ? configured : path.join(home, '.config');
+  return path.join(base, 'autostart', 'paddock.desktop');
+}
+
+const XML_ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' };
+const xml = (text) => String(text).replace(/[&<>"']/g, (char) => XML_ENTITIES[char]);
+
+const shellQuote = (value) => `'${String(value).replaceAll("'", `'\\''`)}'`;
+
+/**
+ * The Desktop Entry spec's Exec quoting: a double-quoted argument with `"`, `` ` `` and `$` escaped,
+ * `%` doubled because it introduces a field code, and a backslash written four times because the
+ * string-value unescaping runs before the quoting rule does.
+ */
+const desktopExecQuote = (value) =>
+  `"${value.replaceAll('\\', '\\\\\\\\').replace(/["`$]/g, '\\$&').replaceAll('%', '%%')}"`;
+
+/**
+ * The job a login starts. Each key is here for a reason that is easy to undo by accident:
+ *  - the node binary is the absolute path of the one running Paddock now, the one known to work —
+ *    launchd's PATH has no nvm or Homebrew in it, so a bare `node` would not be found at all;
+ *  - PATH still leads with that node's directory, so the `npm run dev` of a managed service finds npm
+ *    even if server.js cannot merge the login shell's PATH, and SHELL is what that merge runs;
+ *  - KeepAlive restarts a crash but not a deliberate stop, throttled so a start that keeps failing
+ *    (a port held by another Paddock) retries every 30 s rather than every 10;
+ *  - ExitTimeOut outlasts Paddock's own 15 s shutdown ceiling, so logout stops services cleanly;
+ *  - Interactive, because the dev servers Paddock spawns inherit it and Background throttles I/O.
+ */
+function launchAgentPlist(spec) {
+  const env = {
+    ...spec.env,
+    SHELL: process.env.SHELL || '/bin/zsh',
+    PATH: [path.dirname(spec.program), '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
+  };
+  const string = (value) => `<string>${xml(value)}</string>`;
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+    "<!-- Written by Paddock's Settings screen. Turn it off there, or delete this file. -->",
+    '<plist version="1.0">',
+    '<dict>',
+    `  <key>Label</key>${string(spec.label)}`,
+    '  <key>ProgramArguments</key>',
+    '  <array>',
+    ...[spec.program, ...spec.args].map((arg) => `    ${string(arg)}`),
+    '  </array>',
+    `  <key>WorkingDirectory</key>${string(spec.workingDirectory)}`,
+    '  <key>EnvironmentVariables</key>',
+    '  <dict>',
+    ...Object.entries(env).map(([key, value]) => `    <key>${xml(key)}</key>${string(value)}`),
+    '  </dict>',
+    '  <key>RunAtLoad</key><true/>',
+    '  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>',
+    '  <key>ThrottleInterval</key><integer>30</integer>',
+    '  <key>ExitTimeOut</key><integer>30</integer>',
+    '  <key>ProcessType</key><string>Interactive</string>',
+    `  <key>StandardOutPath</key>${string(spec.logFile)}`,
+    `  <key>StandardErrorPath</key>${string(spec.logFile)}`,
+    '</dict>',
+    '</plist>',
+    '',
+  ].join('\n');
+}
+
+/**
+ * A shell launcher rather than everything inline in the desktop entry: Exec cannot redirect output,
+ * and its quoting rules are not a shell's. `export` rather than a prefix assignment, because an
+ * assignment before `exec` is not guaranteed to reach the program it execs.
+ */
+function linuxLauncher(spec) {
+  return [
+    '#!/bin/sh',
+    `# Written by Paddock's Settings screen, and run at login by ${xdgAutostartFile(spec)}.`,
+    `cd ${shellQuote(spec.workingDirectory)} || exit 1`,
+    ...Object.entries(spec.env).map(([key, value]) => `export ${key}=${shellQuote(value)}`),
+    `exec ${[spec.program, ...spec.args].map(shellQuote).join(' ')} >> ${shellQuote(spec.logFile)} 2>&1`,
+    '',
+  ].join('\n');
+}
+
+const desktopEntry = (launcher) =>
+  [
+    '[Desktop Entry]',
+    'Type=Application',
+    'Name=Paddock',
+    'Comment=Local development application manager',
+    `Exec=${desktopExecQuote(launcher)}`,
+    'Terminal=false',
+    'NoDisplay=true',
+    'X-GNOME-Autostart-enabled=true',
+    '',
+  ].join('\n');
+
+/** `writeFile`'s mode only applies to a file it creates, so a rewrite sets it explicitly. */
+async function writeEntry(file, content, mode) {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, content, { mode });
+  await fs.chmod(file, mode);
+}
+
+/** @returns {Promise<{loaded: boolean, pid: number|null}>} */
+async function launchdJob({ label }) {
+  try {
+    const { stdout } = await run(LAUNCHCTL, ['print', `gui/${process.getuid()}/${label}`], {
+      timeout: PS_TIMEOUT_MS,
+      encoding: 'utf8',
+    });
+    const pid = /^\s*pid = (\d+)/m.exec(stdout);
+    return { loaded: true, pid: pid ? Number(pid[1]) : null };
+  } catch {
+    // Exit 113, "could not find service": nothing by that label is loaded in this user's session.
+    return { loaded: false, pid: null };
+  }
+}
+
+/** @param {import('./index.js').LoginItemSpec} spec */
+export async function loginItemStatus(spec) {
+  if (hasLaunchd()) {
+    const location = launchAgentFile(spec);
+    return {
+      supported: true,
+      reason: null,
+      note: null,
+      installed: existsSync(location),
+      location,
+      startNowCommand: `launchctl bootstrap gui/${process.getuid()} ${shellQuote(location)}`,
+    };
+  }
+  const location = xdgAutostartFile(spec);
+  return {
+    supported: true,
+    reason: null,
+    note: 'Starts with a desktop session (XDG autostart); a login with no desktop, such as over SSH, never runs it.',
+    installed: existsSync(location),
+    location,
+    startNowCommand: null,
+  };
+}
+
+/** @param {import('./index.js').LoginItemSpec} spec */
+export async function installLoginItem(spec) {
+  if (hasLaunchd()) {
+    await writeEntry(launchAgentFile(spec), launchAgentPlist(spec), 0o644);
+    return;
+  }
+  await writeEntry(linuxLauncherFile(spec), linuxLauncher(spec), 0o755);
+  await writeEntry(xdgAutostartFile(spec), desktopEntry(linuxLauncherFile(spec)), 0o644);
+}
+
+/** @param {import('./index.js').LoginItemSpec} spec */
+export async function removeLoginItem(spec) {
+  if (!hasLaunchd()) {
+    await fs.rm(xdgAutostartFile(spec), { force: true });
+    await fs.rm(linuxLauncherFile(spec), { force: true });
+    return;
+  }
+  await fs.rm(launchAgentFile(spec), { force: true });
+  // A job launchd has loaded with nothing running is one stuck retrying a start that keeps failing —
+  // on a port another Paddock holds. Unloading it stops nothing and ends the retries now instead of
+  // at logout. A job with a pid is a running Paddock, and is left exactly as it is.
+  const job = await launchdJob(spec);
+  if (job.loaded && job.pid === null) {
+    await run(LAUNCHCTL, ['bootout', `gui/${process.getuid()}/${spec.label}`], {
+      timeout: PS_TIMEOUT_MS,
+    }).catch(() => {});
+  }
 }
 
 /**

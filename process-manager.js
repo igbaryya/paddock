@@ -21,6 +21,7 @@ import {
   loginShellPath,
 } from './platform/index.js';
 import { append } from './log-store.js';
+import { createLineSplitter } from './line-splitter.js';
 
 const GROUP_POLL_MS = 100;
 const EXIT_FLUSH_MS = 50;
@@ -150,32 +151,6 @@ async function childEnv(overrides) {
 }
 
 // --- output capture ------------------------------------------------------------------------
-
-const LINE_BREAK = /\r\n|\n|\r/;
-
-/**
- * Chunk-to-line splitter that holds back a trailing lone `\r` until the next chunk, so a CRLF
- * straddling a chunk boundary is not torn into a bogus line plus an empty one (FINDINGS D3).
- */
-const createLineSplitter = () => {
-  let residual = '';
-  return {
-    /** @param {string} chunk @returns {string[]} */
-    push(chunk) {
-      residual += chunk;
-      const held = residual.endsWith('\r');
-      const parts = (held ? residual.slice(0, -1) : residual).split(LINE_BREAK);
-      residual = parts.pop() + (held ? '\r' : '');
-      return parts;
-    },
-    /** @returns {string[]} whatever is left, so a final line without a newline is not lost */
-    flush() {
-      const rest = residual.endsWith('\r') ? residual.slice(0, -1) : residual;
-      residual = '';
-      return rest ? rest.split(LINE_BREAK) : [];
-    },
-  };
-};
 
 /** Both streams must be drained or the child blocks at ~192 KB (FINDINGS D1). */
 function attachStreams(rec, child, generation) {

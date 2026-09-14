@@ -7,6 +7,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { realpathSync, statSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { read, update } from './json-db.js';
 
@@ -16,8 +17,18 @@ import { read, update } from './json-db.js';
  *            createdAt: string, updatedAt: string}} ProcessConfig
  */
 /**
- * @typedef {{id: string, name: string, description: string, processes: ProcessConfig[],
- *            createdAt: string, updatedAt: string}} ApplicationConfig
+ * @typedef {{dataDirectory: string, port: number, binDirectory: string|null, user: string,
+ *            password: string, maintenanceDatabase: string, logFile: string|null}} PostgresConfig
+ *   `logFile` null means Paddock's own file for the application, resolved by postgres/cluster.js
+ */
+/**
+ * @typedef {{id: string, name: string, description: string, autoStart: boolean,
+ *            kind: 'processes'|'postgres', postgres: PostgresConfig|null,
+ *            processes: ProcessConfig[], createdAt: string, updatedAt: string}} ApplicationConfig
+ *   `autoStart` may be absent on an application stored before it existed; absent means false.
+ *   A `processes` application is configured process by process. A `postgres` application is one
+ *   PostgreSQL server described by `postgres`, and its `processes` stays empty: the server is run by
+ *   pg_ctl and outlives Paddock, so there is no process of Paddock's to store.
  */
 
 /** Bad input from a user or an agent — the HTTP layer turns this into a 400. */
@@ -41,6 +52,13 @@ export class NotFoundError extends Error {
 const MAX_NAME_LENGTH = 80;
 const MAX_COMMAND_LENGTH = 2_000;
 const MAX_QUOTED_LENGTH = 200;
+const KINDS = new Set(['processes', 'postgres']);
+const DEFAULT_POSTGRES_PORT = 5432;
+const DEFAULT_MAINTENANCE_DATABASE = 'postgres';
+/** PostgreSQL truncates longer identifiers silently, so a longer role or database never matches. */
+const MAX_IDENTIFIER_LENGTH = 63;
+/** The control binary a bin directory must hold, under either platform's spelling. */
+const PG_CTL_EXECUTABLES = ['pg_ctl', 'pg_ctl.exe'];
 /** Exported for `workspace.js`: a variable it reads out of a .env and this module would then refuse
  * is not a variable the form should be offering to fill in. */
 export const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -160,6 +178,15 @@ const assertEnabled = (value) => {
   return value;
 };
 
+/** Off unless asked for: starting services nobody chose to start is the surprise to avoid. */
+const assertAutoStart = (value) => {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== 'boolean') {
+    throw new ValidationError(`autoStart must be true or false, received ${describe(value)}`);
+  }
+  return value;
+};
+
 /**
  * Both configured paths arrive as free text and are checked and resolved the same way. Exported
  * alongside `assertDirectory` for `workspace.js`, so the directory picker and the save that follows
@@ -257,6 +284,158 @@ const normaliseEnv = (env) => {
   return Object.fromEntries(entries);
 };
 
+const assertKind = (value) => {
+  if (value === undefined || value === null) return 'processes';
+  if (!KINDS.has(value)) {
+    throw new ValidationError(`kind must be 'processes' or 'postgres', received ${describe(value)}`);
+  }
+  return value;
+};
+
+const hasFile = (directory, name) => {
+  try {
+    return statSync(path.join(directory, name)).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/** PG_VERSION is the file initdb writes first and every server version checks, so it is the test. */
+const assertDataDirectory = (value) => {
+  const resolved = assertAbsolutePath(value, 'dataDirectory');
+  assertDirectory(resolved, 'dataDirectory');
+  if (!hasFile(resolved, 'PG_VERSION')) {
+    throw new ValidationError(
+      `dataDirectory ${quote(resolved)} is not a PostgreSQL data directory — it has no PG_VERSION; ` +
+        'create the cluster with initdb first'
+    );
+  }
+  return resolved;
+};
+
+/** @returns {string|null} null means "whichever pg_ctl is on PATH", resolved when it is run. */
+const assertBinDirectory = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const resolved = assertAbsolutePath(value, 'binDirectory');
+  assertDirectory(resolved, 'binDirectory');
+  if (!PG_CTL_EXECUTABLES.some((name) => hasFile(resolved, name))) {
+    throw new ValidationError(`binDirectory ${quote(resolved)} does not contain a pg_ctl executable`);
+  }
+  return resolved;
+};
+
+/**
+ * pg_ctl opens the log itself and will not create the directory it is in, so the directory is
+ * checked here rather than surfacing later as a start that fails with no log to explain it.
+ * @returns {string|null} null means Paddock's own log file for the application
+ */
+const assertLogFile = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const resolved = assertAbsolutePath(value, 'logFile');
+  assertDirectory(path.dirname(resolved), 'logFile directory');
+  return resolved;
+};
+
+/** Strict rather than coerced: a port that arrives as "5432" is a form bug worth surfacing. */
+const assertPort = (value) => {
+  if (value === undefined || value === null) return DEFAULT_POSTGRES_PORT;
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) {
+    throw new ValidationError(`port must be an integer between 1 and 65535, received ${describe(value)}`);
+  }
+  return value;
+};
+
+/**
+ * A role or database name. Blank means the default, because blank is what an untouched form field
+ * sends.
+ * @param {string} field @param {string} fallback
+ */
+const assertIdentifier = (value, field, fallback) => {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'string') {
+    throw new ValidationError(`${field} must be a string, received ${describe(value)}`);
+  }
+  const identifier = value.trim();
+  if (identifier === '') return fallback;
+  if (identifier.length > MAX_IDENTIFIER_LENGTH) {
+    throw new ValidationError(
+      `${field} must be at most ${MAX_IDENTIFIER_LENGTH} characters, received ${identifier.length}`
+    );
+  }
+  return identifier;
+};
+
+/** Not trimmed: a space in a password is part of the password. Empty means "no password". */
+const assertPassword = (value) => {
+  if (value === undefined || value === null) return '';
+  if (typeof value !== 'string') {
+    throw new ValidationError(`password must be a string, received ${describe(value)}`);
+  }
+  return value;
+};
+
+/** initdb names the cluster's superuser after the OS account that ran it, so that is the default. */
+const defaultUser = () => os.userInfo().username;
+
+const buildPostgresFields = (input) => {
+  assertObject(input, 'postgres settings');
+  return {
+    dataDirectory: assertDataDirectory(input.dataDirectory),
+    port: assertPort(input.port),
+    binDirectory: assertBinDirectory(input.binDirectory),
+    user: assertIdentifier(input.user, 'user', defaultUser()),
+    password: assertPassword(input.password),
+    maintenanceDatabase: assertIdentifier(
+      input.maintenanceDatabase, 'maintenanceDatabase', DEFAULT_MAINTENANCE_DATABASE
+    ),
+    logFile: assertLogFile(input.logFile),
+  };
+};
+
+/** Only the keys the caller sent are touched — an edit that leaves the password out keeps it. */
+const applyPostgresPatch = (current, patch) => {
+  assertObject(patch, 'postgres settings');
+  const next = { ...current };
+  if (patch.dataDirectory !== undefined) next.dataDirectory = assertDataDirectory(patch.dataDirectory);
+  if (patch.port !== undefined) next.port = assertPort(patch.port);
+  if (patch.binDirectory !== undefined) next.binDirectory = assertBinDirectory(patch.binDirectory);
+  if (patch.user !== undefined) next.user = assertIdentifier(patch.user, 'user', defaultUser());
+  if (patch.password !== undefined) next.password = assertPassword(patch.password);
+  if (patch.maintenanceDatabase !== undefined) {
+    next.maintenanceDatabase = assertIdentifier(
+      patch.maintenanceDatabase, 'maintenanceDatabase', DEFAULT_MAINTENANCE_DATABASE
+    );
+  }
+  if (patch.logFile !== undefined) next.logFile = assertLogFile(patch.logFile);
+  return next;
+};
+
+/** Settings belong to exactly one kind; accepting them on the other would store what nothing reads. */
+const buildKindFields = (kind, postgres) => {
+  if (kind === 'postgres') return { kind, postgres: buildPostgresFields(postgres) };
+  if (postgres !== undefined && postgres !== null) {
+    throw new ValidationError("postgres settings are only accepted with kind 'postgres'");
+  }
+  return { kind, postgres: null };
+};
+
+/**
+ * Two applications on one data directory can never both run — the second fails on the lock file —
+ * and whichever stops last would be stopping the other's server.
+ * @param {string} [excludeId] the application being edited
+ */
+const assertUniqueDataDirectory = (application, siblings, excludeId) => {
+  if (application.kind !== 'postgres') return;
+  const { dataDirectory } = application.postgres;
+  const clash = siblings.find(
+    (s) => s.id !== excludeId && s.kind === 'postgres' && s.postgres?.dataDirectory === dataDirectory
+  );
+  if (!clash) return;
+  throw new ValidationError(
+    `dataDirectory ${quote(dataDirectory)} is already used by '${clash.name}' (${clash.id})`
+  );
+};
+
 /** Every field of a new process, validated. workingDirectory is checked against the new root. */
 const buildProcessFields = (input) => {
   assertObject(input, 'process input');
@@ -292,6 +471,15 @@ const requireApplication = (doc, applicationId) => {
   const application = doc.applications.find((a) => a.id === applicationId);
   if (application) return application;
   throw new NotFoundError(`application ${describe(applicationId)} does not exist`);
+};
+
+/** A PostgreSQL application's one process comes from its settings; there is no list to change. */
+const requireProcessesKind = (application) => {
+  if (application.kind !== 'postgres') return application;
+  throw new ValidationError(
+    `application '${application.name}' (${application.id}) is a PostgreSQL application — its ` +
+      'server process is derived from its postgres settings, so edit those instead'
+  );
 };
 
 const requireProcess = (application, processId) => {
@@ -333,30 +521,54 @@ export async function getApplication(applicationId) {
 }
 
 /**
- * @param {{name: string, description?: string}} input
+ * @param {{name: string, description?: string, autoStart?: boolean, kind?: 'processes'|'postgres',
+ *          postgres?: object}} input
  * @returns {Promise<ApplicationConfig>}
  */
 export async function createApplication(input = {}) {
-  const { name, description } = assertObject(input, 'application input');
+  const { name, description, autoStart, kind, postgres } = assertObject(input, 'application input');
   const timestamp = now();
   const application = {
     id: randomId('app'),
     name: assertName(name, 'application'),
     description: assertDescription(description),
+    autoStart: assertAutoStart(autoStart),
+    ...buildKindFields(assertKind(kind), postgres),
     processes: [],
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   await update((doc) => {
     assertUniqueName(application.name, doc.applications, 'application');
+    assertUniqueDataDirectory(application, doc.applications);
     return { ...doc, applications: [...doc.applications, application] };
   });
   return structuredClone(application);
 }
 
 /**
+ * A patch may change a PostgreSQL application's settings, never an application's kind: a kind change
+ * would strand the runtime state and logs of processes the new kind does not have.
+ * @param {object} application the stored application
+ * @param {object} patch
+ * @returns {object|null} the postgres settings the updated application carries
+ */
+const applyKindPatch = (application, patch) => {
+  if (patch.kind !== undefined && patch.kind !== application.kind) {
+    throw new ValidationError(
+      `kind cannot be changed from '${application.kind}' — create a new application instead`
+    );
+  }
+  if (patch.postgres === undefined) return application.postgres;
+  if (application.kind !== 'postgres') {
+    throw new ValidationError("postgres settings are only accepted with kind 'postgres'");
+  }
+  return applyPostgresPatch(application.postgres, patch.postgres);
+};
+
+/**
  * @param {string} applicationId
- * @param {{name?: string, description?: string}} patch
+ * @param {{name?: string, description?: string, autoStart?: boolean, postgres?: object}} patch
  * @returns {Promise<ApplicationConfig>}
  */
 export async function updateApplication(applicationId, patch = {}) {
@@ -367,7 +579,10 @@ export async function updateApplication(applicationId, patch = {}) {
     updated = { ...application, updatedAt: now() };
     if (patch.name !== undefined) updated.name = assertName(patch.name, 'application');
     if (patch.description !== undefined) updated.description = assertDescription(patch.description);
+    if (patch.autoStart !== undefined) updated.autoStart = assertAutoStart(patch.autoStart);
+    updated.postgres = applyKindPatch(application, patch);
     assertUniqueName(updated.name, doc.applications, 'application', applicationId);
+    assertUniqueDataDirectory(updated, doc.applications, applicationId);
     return withApplication(doc, updated);
   });
   return structuredClone(updated);
@@ -401,7 +616,7 @@ export async function addProcess(applicationId, input = {}) {
     updatedAt: timestamp,
   };
   await update((doc) => {
-    const application = requireApplication(doc, applicationId);
+    const application = requireProcessesKind(requireApplication(doc, applicationId));
     assertUniqueName(proc.name, application.processes, 'process');
     return withApplication(doc, withProcesses(application, [...application.processes, proc]));
   });
@@ -419,7 +634,7 @@ export async function updateProcess(applicationId, processId, patch = {}) {
   assertObject(patch, 'process patch');
   let updated;
   await update((doc) => {
-    const application = requireApplication(doc, applicationId);
+    const application = requireProcessesKind(requireApplication(doc, applicationId));
     const current = requireProcess(application, processId);
     updated = { ...applyProcessPatch(current, patch), updatedAt: now() };
     assertUniqueName(updated.name, application.processes, 'process', processId);
@@ -437,7 +652,7 @@ export async function updateProcess(applicationId, processId, patch = {}) {
 export async function removeProcess(applicationId, processId) {
   let removed;
   await update((doc) => {
-    const application = requireApplication(doc, applicationId);
+    const application = requireProcessesKind(requireApplication(doc, applicationId));
     removed = requireProcess(application, processId);
     const processes = application.processes.filter((p) => p.id !== processId);
     return withApplication(doc, withProcesses(application, processes));

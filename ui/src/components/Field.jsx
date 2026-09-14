@@ -22,8 +22,8 @@ export const nameError = (value) => {
 /**
  * @param {{label: string, value: string, onChange: (value: string) => void, error?: string|null,
  *          hint?: string, rows?: number, placeholder?: string, spellCheck?: boolean,
- *          mono?: boolean, action?: React.ReactNode}} props `action` sits to the right of the
- *   control, for a field that has something to offer beyond typing into it
+ *          mono?: boolean, action?: React.ReactNode, type?: 'text'|'password'}} props `action` sits
+ *   to the right of the control, for a field that has something to offer beyond typing into it
  */
 export default function Field({
   label,
@@ -36,6 +36,7 @@ export default function Field({
   spellCheck,
   mono,
   action,
+  type = 'text',
 }) {
   const id = useId();
   const hintId = hint ? `${id}-hint` : null;
@@ -56,7 +57,7 @@ export default function Field({
       <label htmlFor={id}>{label}</label>
       {/* Always wrapped, action or not: one layout for every field beats a branch that produces two. */}
       <div className="field-control">
-        {rows ? <textarea {...shared} rows={rows} /> : <input type="text" {...shared} />}
+        {rows ? <textarea {...shared} rows={rows} /> : <input type={type} {...shared} />}
         {action}
       </div>
       {hint && (

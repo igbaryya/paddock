@@ -22,7 +22,7 @@ export default function OverviewPage({ applications, ports, busy, onCreate, onAc
         <div>
           <h1>Applications</h1>
           <p className="page-sub">
-            Each one is a group of local repositories started and supervised together.
+            Each one is a group of local repositories, or a PostgreSQL server, started and supervised together.
           </p>
         </div>
         <button type="button" className="btn primary" onClick={onCreate}>

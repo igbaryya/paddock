@@ -13,10 +13,11 @@
     "test": "node --test \"test/*.test.js\"",
     "setup": "npm --prefix ui install",
     "build": "npm --prefix ui run build",
-    "check": "node --check server.js && node --check config.js && node --check json-db.js && node --check applications.js && node --check workspace.js && node --check favicons.js &&node --check log-store.js && node --check process-manager.js && node --check service.js && node --check platform/index.js && node --check platform/posix.js && node --check platform/win32.js && node --check http/respond.js && node --check http/api.js && node --check http/events.js && node --check http/mcp.js && node --check http/static.js && node --check scripts/dev.js"
+    "check": "node --check server.js && node --check config.js && node --check json-db.js && node --check applications.js && node --check workspace.js && node --check favicons.js && node --check login-item.js && node --check log-store.js && node --check process-manager.js && node --check service.js && node --check line-splitter.js && node --check postgres/cluster.js && node --check postgres/data-directory.js && node --check postgres/log-follower.js && node --check postgres/lifecycle.js && node --check postgres/discovery.js && node --check postgres/pool.js && node --check postgres/catalog.js && node --check postgres/admin.js && node --check platform/index.js && node --check platform/posix.js && node --check platform/win32.js && node --check http/respond.js && node --check http/api.js && node --check http/events.js && node --check http/mcp.js && node --check http/static.js && node --check scripts/dev.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "pg": "^8.23.0",
     "zod": "^4.4.3"
   }
 }

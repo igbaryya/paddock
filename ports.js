@@ -289,7 +289,7 @@ export function correlate(snapshot, managed) {
  * cannot absorb the signal meant for its predecessor. Start time alone is not enough: it has
  * one-second granularity on macOS.
  */
-const fingerprintOf = (proc) => (proc ? `${proc.startedAt ?? ''} ${proc.commandLine ?? ''}` : null);
+const fingerprintOf = (proc) => (proc ? `${proc.startedAt ?? ''}\u0000${proc.commandLine ?? ''}` : null);
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 

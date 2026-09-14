@@ -6,6 +6,8 @@
  * decoded byte-preserving and only ever compared against strings this module produced.
  */
 import { execFile, spawnSync } from 'child_process';
+import fs from 'fs/promises';
+import path from 'path';
 import { promisify } from 'util';
 
 const run = promisify(execFile);
@@ -271,7 +273,7 @@ export async function processSnapshot() {
  * @returns {Promise<{workingDirectory: null, executablePath: null}>}
  */
 export async function processPaths() {
-  return { workingDirectory: null, executablePath: null };
+  return { workingDirectory: null, executablePath: null, stderrPath: null };
 }
 
 /**
@@ -306,6 +308,71 @@ export async function signalProcess(pid, { force = false } = {}) {
 export function processExists(pid) {
   if (!isPid(pid)) return false;
   return leaderAlive(pid);
+}
+
+// --- login item ------------------------------------------------------------------------------
+
+const RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+const RUN_VALUE = 'Paddock';
+
+const launcherFile = ({ launcherDir }) => path.join(launcherDir, 'paddock-login.vbs');
+
+/** A VBScript string literal, in which a quote is written twice. */
+const vbsString = (text) => `"${String(text).replaceAll('"', '""')}"`;
+
+/**
+ * A console program started from the Run key gets a console window for the whole session. wscript
+ * running this with window style 0 is the dependable way to start one without it. `cmd /s /c` is only
+ * there for the log redirection: with /s it strips exactly the outer pair of quotes and runs the rest
+ * verbatim, which is what lets every path inside keep quotes of its own.
+ */
+function launcherScript(spec) {
+  const command = [spec.program, ...spec.args].map((part) => `"${part}"`).join(' ');
+  const commandLine = `cmd /d /s /c "${command} >> "${spec.logFile}" 2>&1"`;
+  return [
+    "' Written by Paddock's Settings screen: starts Paddock at login, with no console window.",
+    'Set shell = CreateObject("WScript.Shell")',
+    `shell.CurrentDirectory = ${vbsString(spec.workingDirectory)}`,
+    ...Object.entries(spec.env).map(
+      ([key, value]) => `shell.Environment("PROCESS")(${vbsString(key)}) = ${vbsString(value)}`
+    ),
+    `shell.Run ${vbsString(commandLine)}, 0, False`,
+    '',
+  ].join('\r\n');
+}
+
+const regOptions = { timeout: PROBE_TIMEOUT_MS, encoding: 'buffer', windowsHide: true };
+
+/** @param {import('./index.js').LoginItemSpec} spec */
+export async function loginItemStatus(spec) {
+  const installed = await run(system32('reg.exe'), ['query', RUN_KEY, '/v', RUN_VALUE], regOptions).then(
+    () => true,
+    () => false
+  );
+  return {
+    supported: true,
+    reason: null,
+    note: null,
+    installed,
+    location: `${RUN_KEY}\\${RUN_VALUE}`,
+    startNowCommand: `wscript.exe //B //NoLogo "${launcherFile(spec)}"`,
+  };
+}
+
+/** @param {import('./index.js').LoginItemSpec} spec */
+export async function installLoginItem(spec) {
+  const launcher = launcherFile(spec);
+  await fs.mkdir(path.dirname(launcher), { recursive: true });
+  await fs.writeFile(launcher, launcherScript(spec));
+  const value = `"${system32('wscript.exe')}" //B //NoLogo "${launcher}"`;
+  await run(system32('reg.exe'), ['add', RUN_KEY, '/v', RUN_VALUE, '/t', 'REG_SZ', '/d', value, '/f'], regOptions);
+}
+
+/** @param {import('./index.js').LoginItemSpec} spec */
+export async function removeLoginItem(spec) {
+  // Deleting a value that is not there exits non-zero, and "already off" is the state asked for.
+  await run(system32('reg.exe'), ['delete', RUN_KEY, '/v', RUN_VALUE, '/f'], regOptions).catch(() => {});
+  await fs.rm(launcherFile(spec), { force: true });
 }
 
 /**

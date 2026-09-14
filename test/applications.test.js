@@ -173,6 +173,30 @@ describe('application CRUD', () => {
     assert.deepEqual(await apps.getApplication(app.id), updated);
   });
 
+  test('autoStart defaults to false, can be set on create and by update, and rejects a non-boolean', async () => {
+    const plain = await createApp('autostart-default');
+    assert.equal(plain.autoStart, false);
+
+    const marked = await apps.createApplication({ name: unique('autostart-on'), autoStart: true });
+    assert.equal(marked.autoStart, true);
+
+    const off = await apps.updateApplication(marked.id, { autoStart: false });
+    assert.equal(off.autoStart, false);
+    assert.equal(off.name, marked.name, 'an autoStart patch touches nothing else');
+
+    await rejectsWith(
+      apps.createApplication({ name: unique('autostart-bad'), autoStart: 'yes' }),
+      apps.ValidationError,
+      'autoStart must be true or false',
+      "'yes'"
+    );
+    await rejectsWith(
+      apps.updateApplication(plain.id, { autoStart: 1 }),
+      apps.ValidationError,
+      'autoStart must be true or false'
+    );
+  });
+
   test('updateApplication with an empty patch leaves the name and description alone', async () => {
     const app = await apps.createApplication({ name: unique('untouched'), description: 'keep me' });
     const updated = await apps.updateApplication(app.id, {});
@@ -783,6 +807,167 @@ describe('NotFoundError', () => {
       assert.ok(!(err instanceof apps.NotFoundError));
       return true;
     });
+  });
+});
+
+describe('PostgreSQL applications', () => {
+  /** Directory fixtures only: validation checks what initdb leaves on disk, not a running server. */
+  let clusterDir;
+  let otherClusterDir;
+  let binDir;
+
+  before(async () => {
+    clusterDir = path.join(tmpRoot, 'pgdata');
+    otherClusterDir = path.join(tmpRoot, 'pgdata-other');
+    binDir = path.join(tmpRoot, 'pgbin');
+    for (const dir of [clusterDir, otherClusterDir, binDir]) await fs.mkdir(dir);
+    await fs.writeFile(path.join(clusterDir, 'PG_VERSION'), '16\n');
+    await fs.writeFile(path.join(otherClusterDir, 'PG_VERSION'), '16\n');
+    await fs.writeFile(path.join(binDir, 'pg_ctl'), '#!/bin/sh\n', { mode: 0o755 });
+  });
+
+  /** Each test gets a cluster no other application claims, so data-directory uniqueness never bites. */
+  const freshCluster = async () => {
+    const dir = path.join(tmpRoot, unique('cluster'));
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'PG_VERSION'), '16\n');
+    return dir;
+  };
+
+  const createPostgres = async (postgres, hint = 'pg') =>
+    apps.createApplication({ name: unique(hint), kind: 'postgres', postgres });
+
+  test('an application created without a kind is a group of processes with no postgres settings', async () => {
+    const app = await createApp('kindless');
+    assert.equal(app.kind, 'processes');
+    assert.equal(app.postgres, null);
+  });
+
+  test('a PostgreSQL application fills in every default and stores no processes', async () => {
+    const app = await createPostgres({ dataDirectory: await freshCluster() });
+    assert.equal(app.kind, 'postgres');
+    assert.deepEqual(
+      { ...app.postgres, dataDirectory: undefined },
+      {
+        dataDirectory: undefined,
+        port: 5432,
+        binDirectory: null,
+        user: os.userInfo().username,
+        password: '',
+        maintenanceDatabase: 'postgres',
+        logFile: null,
+      }
+    );
+    assert.deepEqual(app.processes, []);
+  });
+
+  test('blank user and maintenance database mean the defaults, the way an untouched form sends them', async () => {
+    const app = await createPostgres({ dataDirectory: await freshCluster(), user: '  ', maintenanceDatabase: '' });
+    assert.equal(app.postgres.user, os.userInfo().username);
+    assert.equal(app.postgres.maintenanceDatabase, 'postgres');
+  });
+
+  test('an unknown kind is rejected, naming the kinds there are', async () => {
+    await rejectsWith(
+      apps.createApplication({ name: unique('bad-kind'), kind: 'mysql' }),
+      apps.ValidationError,
+      "'processes' or 'postgres'",
+      "'mysql'"
+    );
+  });
+
+  test('a directory with no PG_VERSION is refused, pointing at initdb', async () => {
+    await rejectsWith(createPostgres({ dataDirectory: outsideDir }), apps.ValidationError, 'PG_VERSION', 'initdb');
+  });
+
+  test('a missing data directory is refused rather than stored', async () => {
+    await rejectsWith(createPostgres({}), apps.ValidationError, 'dataDirectory');
+  });
+
+  test('a port must be an integer in range — a string that looks like one is a form bug', async () => {
+    const dataDirectory = await freshCluster();
+    await rejectsWith(createPostgres({ dataDirectory, port: '5432' }), apps.ValidationError, 'port');
+    await rejectsWith(createPostgres({ dataDirectory, port: 70_000 }), apps.ValidationError, 'port');
+  });
+
+  test('a bin directory without pg_ctl is refused; one with it is kept', async () => {
+    const dataDirectory = await freshCluster();
+    await rejectsWith(
+      createPostgres({ dataDirectory, binDirectory: outsideDir }),
+      apps.ValidationError,
+      'pg_ctl executable'
+    );
+    const app = await createPostgres({ dataDirectory, binDirectory: binDir });
+    assert.equal(app.postgres.binDirectory, binDir);
+  });
+
+  test('a log file must be absolute and in a directory that exists — pg_ctl will not create one', async () => {
+    const dataDirectory = await freshCluster();
+    await rejectsWith(createPostgres({ dataDirectory, logFile: 'pg.log' }), apps.ValidationError, 'logFile');
+    await rejectsWith(
+      createPostgres({ dataDirectory, logFile: path.join(tmpRoot, 'no-such-dir', 'pg.log') }),
+      apps.ValidationError,
+      'logFile directory'
+    );
+    const app = await createPostgres({ dataDirectory, logFile: path.join(tmpRoot, 'pg.log') });
+    assert.equal(app.postgres.logFile, path.join(tmpRoot, 'pg.log'));
+  });
+
+  test('postgres settings on a processes application are refused on create and on update', async () => {
+    await rejectsWith(
+      apps.createApplication({ name: unique('mixed'), postgres: { dataDirectory: clusterDir } }),
+      apps.ValidationError,
+      "kind 'postgres'"
+    );
+    const app = await createApp('mixed');
+    await rejectsWith(
+      apps.updateApplication(app.id, { postgres: { port: 5433 } }),
+      apps.ValidationError,
+      "kind 'postgres'"
+    );
+  });
+
+  test('the kind cannot be changed by an update', async () => {
+    const app = await createApp('fixed-kind');
+    await rejectsWith(
+      apps.updateApplication(app.id, { kind: 'postgres' }),
+      apps.ValidationError,
+      'kind cannot be changed'
+    );
+  });
+
+  test('an update touches only the settings it sends — leaving the password out keeps it', async () => {
+    const app = await createPostgres({ dataDirectory: await freshCluster(), password: 'secret' });
+    const moved = await apps.updateApplication(app.id, { postgres: { port: 5555 } });
+    assert.equal(moved.postgres.port, 5555);
+    assert.equal(moved.postgres.password, 'secret');
+
+    const cleared = await apps.updateApplication(app.id, { postgres: { password: '' } });
+    assert.equal(cleared.postgres.password, '');
+    assert.equal(cleared.postgres.port, 5555);
+  });
+
+  test('two applications cannot claim one data directory, but an application may keep its own', async () => {
+    const first = await createPostgres({ dataDirectory: otherClusterDir });
+    await rejectsWith(
+      createPostgres({ dataDirectory: otherClusterDir }),
+      apps.ValidationError,
+      otherClusterDir,
+      first.id
+    );
+    const kept = await apps.updateApplication(first.id, { postgres: { dataDirectory: otherClusterDir } });
+    assert.equal(kept.postgres.dataDirectory, otherClusterDir);
+  });
+
+  test('its process list cannot be edited: add, update and remove are all refused', async () => {
+    const app = await createPostgres({ dataDirectory: await freshCluster() });
+    await rejectsWith(apps.addProcess(app.id, processInput()), apps.ValidationError, 'PostgreSQL application');
+    await rejectsWith(
+      apps.updateProcess(app.id, 'postgres', { command: 'x' }),
+      apps.ValidationError,
+      'PostgreSQL application'
+    );
+    await rejectsWith(apps.removeProcess(app.id, 'postgres'), apps.ValidationError, 'PostgreSQL application');
   });
 });
 

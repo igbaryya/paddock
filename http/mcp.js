@@ -3,34 +3,45 @@
  * Stateless on purpose: a fresh McpServer and transport per POST, closed with the response,
  * because a reused stateless transport answers with a bare 500 no handler here would ever see.
  * Every tool goes through service.js, so the agent and the UI can never see different shapes, and
- * every input is an id — defining processes stays with the human in the dashboard.
+ * every lifecycle input is an id — defining processes stays with the human in the dashboard. The
+ * database tools are the one place an agent sends free text: SQL, against a PostgreSQL application.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
 import { HOST, PORT } from '../config.js';
-import { json as sendJson } from './respond.js';
+import { json as sendJson, databaseErrorFields, errorMessage } from './respond.js';
 import {
   listApplications, getApplication, readLogs,
   startApplication, stopApplication, restartApplication,
   startProcess, stopProcess, restartProcess,
   listPorts, getPort, stopPort,
+  clusterInfo, listDatabases, listSchemas, listTables, describeTable,
+  runReadOnlySql, runSql, createDatabase, dropDatabase,
 } from '../service.js';
 
 const SERVER_INFO = { name: 'paddock', version: '1.0.0' };
 
+const DEFAULT_MAX_ROWS = 200;
+
 const INSTRUCTIONS =
-  'Operate a developer local environment. An application is a named group of local repositories, ' +
-  'each with a start command that this manager spawns and supervises. Flow: list_applications ' +
-  'for ids and current status, get_application for detail, start/stop/restart at either the ' +
-  'application or the single-process level, read_logs for output — pass the next_seq you got ' +
-  'back as since_seq to poll for only the new lines. When something will not start because its ' +
-  'port is taken, list_listening_ports and get_port_info say what holds it and whether that is ' +
-  'one of these applications or something else on the machine, and stop_port frees it by port ' +
-  'rather than by pid. Every tool takes ids and port numbers only. There is deliberately no tool ' +
-  'to create, edit or delete an application or a process, and no way to run an arbitrary command: ' +
-  'you operate what the developer registered, and anything new has to be added by them in the ' +
-  'dashboard.';
+  'Operate a developer local environment. An application is either a named group of local ' +
+  'repositories, each with a start command that this manager spawns and supervises (kind ' +
+  '"processes"), or a local PostgreSQL server run from its data directory as a single process ' +
+  'named "postgres" (kind "postgres"), started and stopped with pg_ctl. That server is not a child ' +
+  'of this manager: it keeps running when the manager stops, and its status is read from its data ' +
+  'directory, so it can read "running" because it was started from a terminal. Flow: ' +
+  'list_applications for ids, kinds and current status, ' +
+  'get_application for detail, start/stop/restart at either the application or the ' +
+  'single-process level, read_logs for output — pass the next_seq you got back as since_seq to ' +
+  'poll for only the new lines. When something will not start because its port is taken, ' +
+  'list_listening_ports and get_port_info say what holds it and whether that is one of these ' +
+  'applications or something else on the machine, and stop_port frees it by port rather than by ' +
+  'pid. For a PostgreSQL application, start it, then list_databases, list_tables / describe_table ' +
+  'to learn the shape, then query (reads) or execute (writes and DDL). Every database tool takes ' +
+  'the application_id and an explicit database — there is no session state between calls. There ' +
+  'is deliberately no tool to create, edit or delete an application or a process: you operate what ' +
+  'the developer registered, and anything new has to be added by them in the dashboard.';
 
 /** An IPv6 literal is bracketed in a Host header, so a configured `::1` is compared that way. */
 const hostAuthority = (host) => (host.includes(':') && !host.startsWith('[') ? `[${host}]` : host);
@@ -58,7 +69,13 @@ const json = (data) => ({
  *  argument is not. Coerced because a thrown non-Error would otherwise produce that same
  *  `text: undefined` and hide the reason behind a protocol error. */
 const formatError = (err) => {
-  const message = typeof err?.message === 'string' && err.message ? err.message : String(err);
+  const message = errorMessage(err);
+  const database = databaseErrorFields(err);
+  if (database) {
+    const fields = Object.entries(database).map(([field, value]) => `${field}: ${value}`);
+    return [`DatabaseError: ${message}`, ...fields].join('\n');
+  }
+  if (err instanceof AggregateError) return message;
   return err?.name && err.name !== 'Error' ? `${err.name}: ${message}` : message;
 };
 
@@ -297,12 +314,193 @@ function registerProcessTools(server) {
   );
 }
 
+const postgres_application_id = z.string()
+  .describe('Id of a PostgreSQL application (kind "postgres") from list_applications');
+const database = z.string().describe('Database name on that application\'s server, from list_databases');
+const params = z
+  .array(z.unknown())
+  .optional()
+  .describe('Values for $1, $2, … placeholders. Use these instead of interpolating literals.');
+
+function registerDatabaseInspectionTools(server) {
+  server.registerTool(
+    'cluster_info',
+    {
+      title: 'Cluster info',
+      description:
+        'Server version, uptime, connected user, data directory, host/port and database count for ' +
+        'a PostgreSQL application\'s server. Use this to answer "is the DB up?" — a connection ' +
+        'refused here means the application is stopped; start_application brings it up.',
+      inputSchema: { application_id: postgres_application_id },
+    },
+    guard(({ application_id }) => clusterInfo(application_id))
+  );
+
+  server.registerTool(
+    'list_databases',
+    {
+      title: 'List databases',
+      description: 'Databases on the server with owner, encoding, on-disk size and open connections.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        include_templates: z.boolean().optional().describe('Include template0/template1 (default false)'),
+      },
+    },
+    guard(({ application_id, include_templates = false }) => listDatabases(application_id, include_templates))
+  );
+
+  server.registerTool(
+    'list_schemas',
+    {
+      title: 'List schemas',
+      description: 'User schemas in a database (system schemas excluded), with relation counts.',
+      inputSchema: { application_id: postgres_application_id, database },
+    },
+    guard(({ application_id, database }) => listSchemas(application_id, database))
+  );
+
+  server.registerTool(
+    'list_tables',
+    {
+      title: 'List tables',
+      description:
+        'Tables, views and materialized views in a database, with estimated row counts and size. ' +
+        'Estimates come from the planner statistics — use a COUNT(*) query for an exact number.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        database,
+        schema: z.string().optional().describe('Limit to one schema (default: all user schemas)'),
+      },
+    },
+    guard(({ application_id, database, schema }) => listTables(application_id, database, schema))
+  );
+
+  server.registerTool(
+    'describe_table',
+    {
+      title: 'Describe table',
+      description:
+        'Columns (type, nullability, default), indexes, constraints and incoming foreign keys for ' +
+        'one table or view.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        database,
+        table: z.string().describe('Table name, optionally schema-qualified: "public.users"'),
+      },
+    },
+    guard(({ application_id, database, table }) => describeTable(application_id, database, table))
+  );
+}
+
+function registerDatabaseSqlTools(server) {
+  server.registerTool(
+    'query',
+    {
+      title: 'Run a read-only query',
+      description:
+        'Run SELECT (or EXPLAIN / SHOW) inside a READ ONLY transaction that is always rolled back — ' +
+        'writes are rejected by the server. The full result is materialised before truncation, so ' +
+        'put a LIMIT in the SQL for large tables. Use execute for writes and DDL.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        database,
+        sql: z.string().describe('A single SQL statement'),
+        params,
+        max_rows: z
+          .number()
+          .int()
+          .positive()
+          .max(5000)
+          .optional()
+          .describe(`Rows returned before truncation (default ${DEFAULT_MAX_ROWS})`),
+      },
+    },
+    guard(async ({ application_id, database, sql, params, max_rows = DEFAULT_MAX_ROWS }) => {
+      const result = await runReadOnlySql({ applicationId: application_id, database, sql, params });
+      return {
+        database,
+        command: result.command,
+        columns: result.columns,
+        row_count: result.rowCount,
+        truncated: result.rows.length > max_rows,
+        rows: result.rows.slice(0, max_rows),
+      };
+    })
+  );
+
+  server.registerTool(
+    'execute',
+    {
+      title: 'Execute SQL (writes and DDL)',
+      description:
+        'Run INSERT/UPDATE/DELETE/DDL against a database. Changes are committed — there is no ' +
+        'wrapping transaction, so send your own BEGIN/COMMIT when you need atomicity across ' +
+        'statements. Without params, several ";"-separated statements may be sent at once and only ' +
+        'the last result is returned.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        database,
+        sql: z.string().describe('SQL to run. Use RETURNING to get rows back from a write.'),
+        params,
+      },
+    },
+    guard(async ({ application_id, database, sql, params }) => {
+      const result = await runSql({ applicationId: application_id, database, sql, params });
+      return {
+        database,
+        command: result.command,
+        columns: result.columns,
+        row_count: result.rowCount,
+        rows: result.rows.slice(0, DEFAULT_MAX_ROWS),
+      };
+    })
+  );
+}
+
+function registerDatabaseAdminTools(server) {
+  server.registerTool(
+    'create_database',
+    {
+      title: 'Create database',
+      description: 'Create a new database on a PostgreSQL application\'s server.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        name: z.string().describe('New database name (letters, digits, _ and $; must not start with a digit)'),
+        owner: z.string().optional().describe('Role that owns it (default: the connecting user)'),
+        template: z.string().optional().describe('Template database (default: template1)'),
+      },
+    },
+    guard(({ application_id, name, owner, template }) =>
+      createDatabase(application_id, { name, owner, template }))
+  );
+
+  server.registerTool(
+    'drop_database',
+    {
+      title: 'Drop database',
+      description:
+        'Permanently drop a database and everything in it. Terminates other sessions on it. ' +
+        'postgres, template0, template1 and the application\'s maintenance database are refused. ' +
+        'Requires confirm: true.',
+      inputSchema: {
+        application_id: postgres_application_id,
+        name: z.string().describe('Database to drop'),
+        confirm: z.literal(true).describe('Must be true — this is irreversible'),
+      },
+    },
+    guard(({ application_id, name }) => dropDatabase(application_id, name))
+  );
+}
+
 function createMcpServer() {
   const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
   registerInspectionTools(server);
   registerApplicationTools(server);
   registerProcessTools(server);
   registerPortTools(server);
+  registerDatabaseInspectionTools(server);
+  registerDatabaseSqlTools(server);
+  registerDatabaseAdminTools(server);
   return server;
 }
 

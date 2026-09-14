@@ -11,9 +11,21 @@ import * as logStore from './log-store.js';
 import * as ports from './ports.js';
 import * as workspace from './workspace.js';
 import * as favicons from './favicons.js';
+import * as loginItem from './login-item.js';
+import * as cluster from './postgres/cluster.js';
+import * as lifecycle from './postgres/lifecycle.js';
+import * as discovery from './postgres/discovery.js';
+import * as pool from './postgres/pool.js';
+import * as catalog from './postgres/catalog.js';
+import * as admin from './postgres/admin.js';
+import { DATA_DIR, ROOT_DIR } from './config.js';
 
-/** Re-exported so `http/` never has to reach past this layer for runtime events. */
+/**
+ * Re-exported so `http/` never has to reach past this layer for runtime events. PostgreSQL servers
+ * report their status and log lines on the same stream, so a dashboard follows both one way.
+ */
 export const events = manager.events;
+for (const name of ['status', 'log']) lifecycle.events.on(name, (event) => events.emit(name, event));
 
 /** An absent workingDirectory means "the repository root" — resolved once, here, for everyone. */
 const effectiveCwd = (proc) => proc.workingDirectory || proc.repositoryPath;
@@ -25,15 +37,56 @@ const spawnConfig = (applicationId, proc) => ({
   workingDirectory: effectiveCwd(proc),
 });
 
+const isPostgres = (config) => config.kind === 'postgres';
+
+/**
+ * What an application runs. A PostgreSQL application's one server is derived from its settings on
+ * every read, so views, logs and ports treat it exactly like a configured process.
+ * @param {object} config an ApplicationConfig
+ */
+const processesOf = (config) => (isPostgres(config) ? [cluster.serverProcess(config)] : config.processes);
+
+/**
+ * How an application's processes are run, behind one set of calls. A configured process is a child
+ * of this manager, supervised by process-manager until its group is gone. A PostgreSQL server is not
+ * a child at all: pg_ctl runs it detached, so it outlives Paddock and may be up before Paddock is,
+ * and postgres/lifecycle.js observes it rather than holding it — which is why only that runtime has
+ * anything to refresh.
+ */
+const RUNTIMES = {
+  processes: {
+    refresh: async () => {},
+    getState: (config, proc) => manager.getState(config.id, proc.id),
+    start: (config, proc) => manager.start(spawnConfig(config.id, proc)),
+    stop: (config, proc) => manager.stop(config.id, proc.id),
+    restart: (config, proc) => manager.restart(spawnConfig(config.id, proc)),
+    forget: (config, proc) => manager.forget(config.id, proc.id),
+  },
+  postgres: {
+    refresh: (config) => lifecycle.refresh(cluster.serverOf(config)),
+    getState: (config) => lifecycle.getState(config.id),
+    start: (config) => lifecycle.start(cluster.serverOf(config)),
+    stop: (config) => lifecycle.stop(cluster.serverOf(config)),
+    restart: (config) => lifecycle.restart(cluster.serverOf(config)),
+    forget: (config) => lifecycle.forget(config.id),
+  },
+};
+
+const runtimeOf = (config) => (isPostgres(config) ? RUNTIMES.postgres : RUNTIMES.processes);
+
+/** Views are built synchronously, so whatever has to be observed is observed before they are. */
+const refreshRuntimes = (configs) => Promise.all(configs.map((config) => runtimeOf(config).refresh(config)));
+
 const findProcess = (config, processId) => {
-  const proc = config.processes.find((p) => p.id === processId);
+  const proc = processesOf(config).find((p) => p.id === processId);
   if (proc) return proc;
   throw new applications.NotFoundError(`No process ${processId} in application ${config.id}`);
 };
 
 /** Config fields plus the flattened runtime state — the shape UI and agent both consume. */
-const processView = (applicationId, proc) => {
-  const state = manager.getState(applicationId, proc.id);
+const processView = (config, proc) => {
+  const applicationId = config.id;
+  const state = runtimeOf(config).getState(config, proc);
   return {
     id: proc.id,
     name: proc.name,
@@ -102,13 +155,27 @@ const processCounts = (views) => {
   return counts;
 };
 
+/**
+ * The settings as configured, plus where they are reached — minus the password, which the manager
+ * uses and no view hands out: the application list goes to every dashboard and into agents' context.
+ */
+const postgresView = ({ password, ...settings }) => ({
+  ...settings,
+  host: cluster.HOST,
+  passwordSet: password !== '',
+});
+
 /** @param {object} config an ApplicationConfig */
 const applicationView = (config) => {
-  const processes = config.processes.map((proc) => processView(config.id, proc));
+  const processes = processesOf(config).map((proc) => processView(config, proc));
   return {
     id: config.id,
     name: config.name,
     description: config.description,
+    // An application stored before the field existed has none, and that means off.
+    autoStart: config.autoStart === true,
+    kind: config.kind,
+    postgres: isPostgres(config) ? postgresView(config.postgres) : null,
     status: applicationStatus(processes),
     createdAt: config.createdAt,
     updatedAt: config.updatedAt,
@@ -117,13 +184,17 @@ const applicationView = (config) => {
   };
 };
 
-const viewOf = async (appId) => applicationView(await applications.getApplication(appId));
+async function viewOf(appId) {
+  const config = await applications.getApplication(appId);
+  await refreshRuntimes([config]);
+  return applicationView(config);
+}
 
 /** Runtime state, buffered logs and a cached favicon outlive a deleted config row unless dropped here. */
-const discardRuntime = (applicationId, processId) => {
-  manager.forget(applicationId, processId);
-  logStore.clear(applicationId, processId);
-  favicons.forget(processId);
+const discardRuntime = (config, proc) => {
+  runtimeOf(config).forget(config, proc);
+  logStore.clear(config.id, proc.id);
+  favicons.forget(proc.id);
 };
 
 /**
@@ -138,29 +209,32 @@ const operationResult = (proc, state, error) => ({
   error: error ? error.message : state.lastError,
 });
 
-async function startOne(applicationId, proc) {
+async function startOne(config, proc) {
+  const runtime = runtimeOf(config);
   try {
-    return operationResult(proc, await manager.start(spawnConfig(applicationId, proc)), null);
+    return operationResult(proc, await runtime.start(config, proc), null);
   } catch (err) {
-    return operationResult(proc, manager.getState(applicationId, proc.id), err);
+    return operationResult(proc, runtime.getState(config, proc), err);
   }
 }
 
-async function stopOne(applicationId, proc) {
+async function stopOne(config, proc) {
+  const runtime = runtimeOf(config);
   try {
-    await manager.stop(applicationId, proc.id);
-    return operationResult(proc, manager.getState(applicationId, proc.id), null);
+    await runtime.stop(config, proc);
+    return operationResult(proc, runtime.getState(config, proc), null);
   } catch (err) {
-    return operationResult(proc, manager.getState(applicationId, proc.id), err);
+    return operationResult(proc, runtime.getState(config, proc), err);
   }
 }
 
 /**
  * Has this process ever been spawned in this manager's lifetime? A `crashed` one still counts —
  * FINDINGS B6: its group can outlive the shell that led it, so it is exactly what must be stopped.
+ * A PostgreSQL server counts whenever it was seen, whoever started it.
  */
-const hasRuntime = (applicationId, processId) => {
-  const state = manager.getState(applicationId, processId);
+const hasRuntime = (config, proc) => {
+  const state = runtimeOf(config).getState(config, proc);
   return state.startedAt != null || state.status !== 'stopped';
 };
 
@@ -171,9 +245,9 @@ const hasRuntime = (applicationId, processId) => {
  */
 async function stopProcesses(config) {
   const results = [];
-  for (const proc of [...config.processes].reverse()) {
-    if (!hasRuntime(config.id, proc.id)) continue;
-    results.push(await stopOne(config.id, proc));
+  for (const proc of [...processesOf(config)].reverse()) {
+    if (!hasRuntime(config, proc)) continue;
+    results.push(await stopOne(config, proc));
   }
   return results;
 }
@@ -181,6 +255,7 @@ async function stopProcesses(config) {
 /** @returns {Promise<object[]>} one ApplicationView per configured application */
 export async function listApplications() {
   const configs = await applications.listApplications();
+  await refreshRuntimes(configs);
   return configs.map(applicationView);
 }
 
@@ -189,32 +264,52 @@ export async function getApplication(applicationId) {
   return viewOf(applicationId);
 }
 
-/** @param {{name:string, description?:string}} input */
+/**
+ * @param {{name:string, description?:string, autoStart?:boolean, kind?:'processes'|'postgres',
+ *          postgres?:object}} input
+ */
 export async function createApplication(input) {
   return applicationView(await applications.createApplication(input));
 }
 
+/** What the server was started with; credentials only apply to the next connection. */
+const SERVER_SETTINGS = ['dataDirectory', 'port', 'binDirectory', 'logFile'];
+
+/**
+ * A running server keeps the settings it was started with, like any running process keeps its
+ * command — so the same restart marker `updateProcess` sets goes on the server process here.
+ */
+function markServerChanged(view, patch) {
+  const changed = SERVER_SETTINGS.some((key) => patch?.postgres?.[key] !== undefined);
+  if (!changed || !lifecycle.isActive(view.id)) return;
+  view.processes.find((p) => p.id === cluster.SERVER_PROCESS_ID).configChangedWhileRunning = true;
+}
+
 /**
  * @param {string} applicationId
- * @param {{name?:string, description?:string}} patch
+ * @param {{name?:string, description?:string, autoStart?:boolean, postgres?:object}} patch
  */
 export async function updateApplication(applicationId, patch) {
   await applications.updateApplication(applicationId, patch);
-  return viewOf(applicationId);
+  const view = await viewOf(applicationId);
+  if (view.kind === 'postgres') markServerChanged(view, patch);
+  return view;
 }
 
 /**
  * Stops and forgets before deleting: a removed application must not leave live processes that
- * nobody can see or stop.
+ * nobody can see or stop. A PostgreSQL server is the exception — it outlives Paddock by design, and
+ * deleting its application is Paddock forgetting it, not the server and its clients going down.
  * @param {string} applicationId
  */
 export async function deleteApplication(applicationId) {
   const config = await applications.getApplication(applicationId);
-  await stopProcesses(config);
+  if (!isPostgres(config)) await stopProcesses(config);
   // The config row goes first: discarding runtime is infallible, so a failed write leaves the
   // application intact and still addressable rather than alive but with no state behind it.
   const removed = await applications.deleteApplication(applicationId);
-  for (const proc of config.processes) discardRuntime(config.id, proc.id);
+  for (const proc of processesOf(config)) discardRuntime(config, proc);
+  await pool.closeApplication(config.id);
   return applicationView(removed);
 }
 
@@ -251,9 +346,10 @@ export async function updateProcess(applicationId, processId, patch) {
  */
 export async function removeProcess(applicationId, processId) {
   const config = await applications.getApplication(applicationId);
-  await stopOne(config.id, findProcess(config, processId));
+  const proc = findProcess(config, processId);
+  await stopOne(config, proc);
   await applications.removeProcess(applicationId, processId);
-  discardRuntime(config.id, processId);
+  discardRuntime(config, proc);
   return viewOf(applicationId);
 }
 
@@ -266,8 +362,8 @@ export async function removeProcess(applicationId, processId) {
 export async function startApplication(applicationId) {
   const config = await applications.getApplication(applicationId);
   const results = [];
-  for (const proc of config.processes.filter((p) => p.enabled)) {
-    results.push(await startOne(config.id, proc));
+  for (const proc of processesOf(config).filter((p) => p.enabled)) {
+    results.push(await startOne(config, proc));
   }
   // Re-read rather than reuse `config`: every start above is an await a concurrent edit fits in.
   return { application: await viewOf(applicationId), results };
@@ -283,6 +379,36 @@ export async function stopApplication(applicationId) {
   return { application: await viewOf(applicationId), results };
 }
 
+/** Set by `shutdown`, so an auto-start still working through its list stops spawning. */
+let shuttingDown = false;
+
+/**
+ * Start every application marked to start with Paddock — whether Paddock was started by hand or by
+ * the login entry. One application at a time, in configured order, each through the same
+ * `startApplication` a click on Start uses, so enabled-only and in-order hold here too.
+ *
+ * Sequential rather than concurrent: at login several dev servers compiling at once is exactly the
+ * spike a machine that is also just waking up handles worst, and two applications that both want
+ * port 3000 fail the same way every time instead of whichever loses a race.
+ *
+ * One application failing — or being deleted from the dashboard mid-way — never stops the rest.
+ * @returns {Promise<{applicationId: string, name: string, results: object[], error: string|null}[]>}
+ */
+export async function autoStartApplications() {
+  const configs = (await applications.listApplications()).filter((config) => config.autoStart === true);
+  const outcomes = [];
+  for (const config of configs) {
+    if (shuttingDown) break;
+    try {
+      const { results } = await startApplication(config.id);
+      outcomes.push({ applicationId: config.id, name: config.name, results, error: null });
+    } catch (err) {
+      outcomes.push({ applicationId: config.id, name: config.name, results: [], error: err.message });
+    }
+  }
+  return outcomes;
+}
+
 /** Everything stops before anything starts — two copies of a dev server fight over the port. */
 export async function restartApplication(applicationId) {
   await stopApplication(applicationId);
@@ -295,7 +421,7 @@ export async function restartApplication(applicationId) {
  */
 export async function startProcess(applicationId, processId) {
   const config = await applications.getApplication(applicationId);
-  await manager.start(spawnConfig(config.id, findProcess(config, processId)));
+  await runtimeOf(config).start(config, findProcess(config, processId));
   return viewOf(applicationId);
 }
 
@@ -305,8 +431,8 @@ export async function startProcess(applicationId, processId) {
  */
 export async function stopProcess(applicationId, processId) {
   const config = await applications.getApplication(applicationId);
-  findProcess(config, processId);   // 404 before touching runtime, never a silent no-op
-  await manager.stop(config.id, processId);
+  // Resolved first: a 404 before touching runtime, never a silent no-op.
+  await runtimeOf(config).stop(config, findProcess(config, processId));
   return viewOf(applicationId);
 }
 
@@ -316,7 +442,7 @@ export async function stopProcess(applicationId, processId) {
  */
 export async function restartProcess(applicationId, processId) {
   const config = await applications.getApplication(applicationId);
-  await manager.restart(spawnConfig(config.id, findProcess(config, processId)));
+  await runtimeOf(config).restart(config, findProcess(config, processId));
   return viewOf(applicationId);
 }
 
@@ -329,10 +455,11 @@ export async function restartProcess(applicationId, processId) {
 export async function readLogs({ applicationId, processId, limit, sinceSeq, stream }) {
   const config = await applications.getApplication(applicationId);
   const proc = processId ? findProcess(config, processId) : null;
-  const names = new Map(config.processes.map((p) => [p.id, p.name]));
+  const processes = processesOf(config);
+  const names = new Map(processes.map((p) => [p.id, p.name]));
   const { entries, nextSeq, dropped } = logStore.read({
     applicationId: config.id,
-    processIds: proc ? [proc.id] : config.processes.map((p) => p.id),
+    processIds: proc ? [proc.id] : processes.map((p) => p.id),
     limit,
     sinceSeq,
     stream,
@@ -362,10 +489,13 @@ export async function readLogs({ applicationId, processId, limit, sinceSeq, stre
  */
 async function managedProcesses() {
   const configs = await applications.listApplications();
+  // A scan runs every few seconds while a dashboard is open, which is also what notices a server
+  // started or stopped from a terminal.
+  await refreshRuntimes(configs);
   const managed = [];
   for (const config of configs) {
-    for (const proc of config.processes) {
-      const state = manager.getState(config.id, proc.id);
+    for (const proc of processesOf(config)) {
+      const state = runtimeOf(config).getState(config, proc);
       if (!Number.isInteger(state.pid)) continue;
       managed.push({
         applicationId: config.id,
@@ -374,6 +504,7 @@ async function managedProcesses() {
         processName: proc.name,
         pid: state.pid,
         repositoryPath: proc.repositoryPath,
+        servesHttp: !isPostgres(config),
       });
     }
   }
@@ -414,12 +545,20 @@ function rebuildPortIndex(owned) {
  * looked for. Never awaited: `stopPort` and `getPort` scan too, and neither may wait on a dev server
  * answering HTTP. A newly found icon changes the application views, which is what the
  * `applications` event tells every dashboard to refetch.
+ *
+ * A PostgreSQL server is left out: it speaks its own protocol on its port, and an HTTP probe there
+ * finds no icon and leaves an "invalid startup packet" line in its log.
  */
-function discoverFavicons(owned) {
-  const targets = [...owned.values()].map((entry) => ({
-    ...entry,
-    startedAt: manager.getState(entry.applicationId, entry.processId).startedAt,
-  }));
+function discoverFavicons(owned, managed) {
+  const probeable = new Set(
+    managed.filter((m) => m.servesHttp).map((m) => portKey(m.applicationId, m.processId))
+  );
+  const targets = [...owned]
+    .filter(([key]) => probeable.has(key))
+    .map(([, entry]) => ({
+      ...entry,
+      startedAt: manager.getState(entry.applicationId, entry.processId).startedAt,
+    }));
   favicons
     .discover(targets)
     .then((changed) => {
@@ -434,10 +573,11 @@ function discoverFavicons(owned) {
  */
 export async function listPorts({ force = false } = {}) {
   const snapshot = await ports.scan({ force });
-  const usages = ports.correlate(snapshot, await managedProcesses());
+  const managed = await managedProcesses();
+  const usages = ports.correlate(snapshot, managed);
   const owned = managedListeners(usages);
   rebuildPortIndex(owned);
-  discoverFavicons(owned);
+  discoverFavicons(owned, managed);
   return { scannedAt: snapshot.scannedAt, ports: usages, degraded: snapshot.degraded };
 }
 
@@ -452,7 +592,7 @@ export const loadFavicons = () => favicons.load();
  */
 export async function listFavicons() {
   const configs = await applications.listApplications();
-  const processIds = new Set(configs.flatMap((config) => config.processes.map((proc) => proc.id)));
+  const processIds = new Set(configs.flatMap((config) => processesOf(config).map((proc) => proc.id)));
   return { favicons: favicons.list(processIds) };
 }
 
@@ -529,6 +669,180 @@ function assertPort(port) {
   }
 }
 
+// --- PostgreSQL databases --------------------------------------------------------------------
+
+/**
+ * Where a PostgreSQL application's server is reached. Asked of any other application it is the
+ * caller's mistake, not a missing record, so it is a validation error that names the kind.
+ *
+ * A server that is not up is refused before connecting: the attempt would only say ECONNREFUSED —
+ * or, worse, reach whatever else is listening on that port and answer from the wrong cluster.
+ * @param {string} applicationId
+ */
+async function connectionFor(applicationId) {
+  const config = await applications.getApplication(applicationId);
+  if (!isPostgres(config)) {
+    throw new applications.ValidationError(
+      `application '${config.name}' (${config.id}) is not a PostgreSQL application — it has no databases`
+    );
+  }
+  const state = await RUNTIMES.postgres.refresh(config);
+  if (state.status !== 'running') {
+    throw new applications.ValidationError(
+      `the PostgreSQL server of '${config.name}' (${config.id}) is ${state.status} — start it first`
+    );
+  }
+  return cluster.connectionOf(config, state);
+}
+
+/** @param {string} applicationId */
+export async function clusterInfo(applicationId) {
+  return catalog.clusterInfo(await connectionFor(applicationId));
+}
+
+/** @param {string} applicationId @param {boolean} [includeTemplates] */
+export async function listDatabases(applicationId, includeTemplates = false) {
+  return catalog.listDatabases(await connectionFor(applicationId), includeTemplates);
+}
+
+/** @param {string} applicationId @param {string} database */
+export async function listSchemas(applicationId, database) {
+  return catalog.listSchemas(await connectionFor(applicationId), database);
+}
+
+/** @param {string} applicationId @param {string} database @param {string} [schema] */
+export async function listTables(applicationId, database, schema) {
+  return catalog.listTables(await connectionFor(applicationId), database, schema);
+}
+
+/** @param {string} applicationId @param {string} database @param {string} table */
+export async function describeTable(applicationId, database, table) {
+  return catalog.describeTable(await connectionFor(applicationId), database, table);
+}
+
+/**
+ * Reads only: the statement runs inside a READ ONLY transaction that is always rolled back.
+ * @param {{applicationId: string, database: string, sql: string, params?: unknown[]}} q
+ */
+export async function runReadOnlySql({ applicationId, database, sql, params }) {
+  return pool.runReadOnlySql(await connectionFor(applicationId), database, sql, params);
+}
+
+/**
+ * Writes and DDL, committed — no wrapping transaction.
+ * @param {{applicationId: string, database: string, sql: string, params?: unknown[]}} q
+ */
+export async function runSql({ applicationId, database, sql, params }) {
+  return pool.runSql(await connectionFor(applicationId), database, sql, params);
+}
+
+/** Past this, a console result is cut off and says so — a grid of a million rows helps nobody. */
+const CONSOLE_MAX_ROWS = 1_000;
+
+/** A console request straight from a body: reads unless a write is asked for in so many words. */
+function assertStatement(input) {
+  const { database, sql, readOnly = true } = input ?? {};
+  if (typeof database !== 'string' || database.trim() === '') {
+    throw new applications.ValidationError('database must be the name of a database on the server');
+  }
+  if (typeof sql !== 'string' || sql.trim() === '') {
+    throw new applications.ValidationError('sql must be a non-empty string');
+  }
+  if (typeof readOnly !== 'boolean') {
+    throw new applications.ValidationError(`readOnly must be true or false, received ${JSON.stringify(readOnly)}`);
+  }
+  return { database: database.trim(), sql, readOnly };
+}
+
+/**
+ * One run of a PostgreSQL application's SQL console. Read-only unless `readOnly: false` is sent, and
+ * a read-only run takes exactly one statement. Rows come back as arrays beside the column names, so
+ * two columns called `id` stay two columns; past CONSOLE_MAX_ROWS the rest are dropped, and
+ * `truncated` says so. The whole result is still materialised first — a LIMIT is what keeps a huge
+ * table cheap.
+ * @param {string} applicationId
+ * @param {{database: string, sql: string, readOnly?: boolean}} input
+ */
+export async function runStatement(applicationId, input) {
+  const { database, sql, readOnly } = assertStatement(input);
+  const connection = await connectionFor(applicationId);
+  const run = readOnly ? pool.runReadOnlySql : pool.runSql;
+  const startedAt = performance.now();
+  const result = await run(connection, database, sql, [], { rowMode: 'array' });
+  return {
+    database,
+    readOnly,
+    command: result.command,
+    columns: result.columns,
+    rowCount: result.rowCount,
+    rows: result.rows.slice(0, CONSOLE_MAX_ROWS),
+    truncated: result.rows.length > CONSOLE_MAX_ROWS,
+    durationMs: Math.round(performance.now() - startedAt),
+  };
+}
+
+/** @param {string} applicationId @param {{name: string, owner?: string, template?: string}} input */
+export async function createDatabase(applicationId, input) {
+  return admin.createDatabase(await connectionFor(applicationId), input);
+}
+
+/** @param {string} applicationId @param {string} name */
+export async function dropDatabase(applicationId, name) {
+  return admin.dropDatabase(await connectionFor(applicationId), { name });
+}
+
+/**
+ * Clusters on this machine for the new-application form, each marked with the application that
+ * already runs it, if any — a data directory can belong to only one.
+ */
+export async function discoverClusters() {
+  const [found, configs] = await Promise.all([discovery.discover(), applications.listApplications()]);
+  const owners = new Map(
+    configs.filter(isPostgres).map((config) => [config.postgres.dataDirectory, config])
+  );
+  const clusters = found.map((candidate) => {
+    const owner = owners.get(candidate.dataDirectory);
+    return { ...candidate, claimedBy: owner ? { id: owner.id, name: owner.name } : null };
+  });
+  return { clusters };
+}
+
+// --- settings --------------------------------------------------------------------------------
+
+/**
+ * The Settings screen: the start-at-login switch, and the facts about this copy that explain what
+ * the switch would start — which checkout, under which node, keeping its data where.
+ */
+export async function getSettings() {
+  return {
+    startAtLogin: await loginItem.status(),
+    instance: {
+      pid: process.pid,
+      nodeVersion: process.version,
+      nodePath: process.execPath,
+      installDir: ROOT_DIR,
+      dataDir: DATA_DIR,
+    },
+  };
+}
+
+/**
+ * Only the keys sent are changed. Turning the switch on while it is already on rewrites the entry,
+ * which is exactly what repairs a stale one.
+ * @param {{startAtLogin?: boolean}} patch
+ */
+export async function updateSettings(patch) {
+  const { startAtLogin } = patch;
+  if (startAtLogin !== undefined && typeof startAtLogin !== 'boolean') {
+    throw new applications.ValidationError(
+      `startAtLogin must be true or false, received ${JSON.stringify(startAtLogin)}`
+    );
+  }
+  if (startAtLogin === true) await loginItem.enable();
+  if (startAtLogin === false) await loginItem.disable();
+  return getSettings();
+}
+
 // --- workspace inspection --------------------------------------------------------------------
 
 /**
@@ -547,8 +861,15 @@ export const inspectDirectory = (directory) => workspace.inspect(directory);
 /** Runtime changed, so the cached answer to "who owns this port" is no longer trustworthy. */
 manager.events.on('status', () => ports.invalidate());
 
-/** Graceful shutdown: drain the children first, then the log write streams they were feeding. */
+/**
+ * Graceful shutdown: close the database pools, stop following server logs, drain the children, then
+ * the log write streams they were all feeding. PostgreSQL servers are not stopped — they are not
+ * Paddock's children, and outliving it is what they are run detached for.
+ */
 export async function shutdown() {
+  shuttingDown = true;
+  await pool.closeAll();
+  lifecycle.close();
   await manager.stopAll();
   // Awaited: closeAll flushes queued JSONL writes, and server.js calls process.exit() right after.
   await logStore.closeAll();

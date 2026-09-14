@@ -21,8 +21,8 @@ import path from 'node:path';
 
 // config.js reads the environment at import time, so the data dir is redirected before the first
 // project module loads.
-const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'local-dev-test-'));
-process.env.LOCAL_DEV_DATA_DIR = dataDir;
+const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'paddock-test-'));
+process.env.PADDOCK_DATA_DIR = dataDir;
 
 const ports = await import(new URL('../ports.js', import.meta.url).href);
 const platform = await import(new URL('../platform/index.js', import.meta.url).href);
@@ -32,7 +32,7 @@ const IS_WIN = process.platform === 'win32';
 /** A managed process as service.js hands it to the correlator. */
 const managed = (over = {}) => ({
   applicationId: 'app_1',
-  applicationName: 'DotCollab',
+  applicationName: 'Acme Platform',
   processId: 'proc_1',
   processName: 'frontend',
   pid: 100,
@@ -294,7 +294,7 @@ describe('termination safety', () => {
     try {
       await delay(300);
       // The identity we "resolved" belongs to something else entirely.
-      const result = await ports.terminate(child.pid, 'Sat Sep 12 00:00:00 2026 totally other command');
+      const result = await ports.terminate(child.pid, 'Sat Sep 12 00:00:00 2026\u0000totally other command');
       assert.equal(result.stopped, false);
       assert.equal(result.reason, 'identity-changed');
       assert.equal(platform.processExists(child.pid), true, 'the process must be untouched');

@@ -11,7 +11,7 @@ watch every process, and let an AI agent drive it over MCP.
 
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.6-5b9cff)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-3ecf8e)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/tests-268%20passing-3ecf8e)](#testing)
+[![Tests](https://img.shields.io/badge/tests-317%20passing-3ecf8e)](#testing)
 [![License](https://img.shields.io/badge/license-MIT-8b94a7)](LICENSE)
 
 <img src="docs/overview.png" alt="The Paddock overview: each application as a card with its processes and the ports they hold">
@@ -51,18 +51,32 @@ npm start            # http://127.0.0.1:4599
 No `.env` required — every setting has a default. For UI work with hot reload, `npm run dev` runs the
 server and Vite together and tears both down on Ctrl-C.
 
+To stop starting it by hand, turn on **Settings → Start at login**. It writes a per-user login entry —
+a LaunchAgent on macOS, a `Run` key with a hidden launcher on Windows, an XDG autostart entry on Linux
+— that runs this checkout under the node binary running it now. It takes effect at your next login
+and never starts or stops anything immediately; the screen shows the command to hand over without
+logging out, and warns when the entry has gone stale (the checkout moved, or that node was removed).
+The Windows entry is implemented but has not been run on Windows.
+
+**Settings → Start applications with Paddock** picks the applications that come up as soon as
+Paddock does — at login or by hand. They start one at a time in the order they are listed, each with
+its enabled processes only, and only once Paddock holds its port and has reaped leftovers from a
+previous run. The dashboard is usable while they come up, and Paddock logs one line per application
+naming anything that did not start.
+
 Then: **New application** → **Add process** → point it at a repository, give it `npm run dev` →
 **Start**.
 
 ## The dashboard
 
-Three routes, all real URLs — a project page is worth pasting into a ticket, and survives a refresh.
+Four routes, all real URLs — a project page is worth pasting into a ticket, and survives a refresh.
 
 | Route | |
 | --- | --- |
 | `/` | Every application as a card: status, its processes, the ports it holds |
-| `/applications/:id` | One application in full — controls, process detail, live logs |
+| `/applications/:id` | One application in full — controls, process detail, live logs, and a SQL console for PostgreSQL |
 | `/ports` | Every listening port on the machine, filterable, with its owner |
+| `/settings` | Start Paddock at login, which applications start with it, and where this copy lives |
 
 <img src="docs/application.png" alt="An application page showing three processes, one of them crashed with its error">
 
@@ -79,10 +93,86 @@ database) simply contributes none.
 Adding a process does not mean typing three things out by hand. Both path fields open your operating
 system's own folder dialog (falling back to an in-page browser on a machine with no GUI session or,
 on Linux, without zenity or kdialog), and once the directory the command will run in is known — the
-working directory if you set one, the repository root otherwise — the form offers that directory's `package.json` scripts as the
-command, and its `.env` files as the environment. Every one of those is a click, not a default: the
+working directory if you set one, the repository root otherwise — the form offers that directory's
+`package.json` scripts as the command, and its `.env` files as the environment. Every one of those is a click, not a default: the
 scripts fill the Command field, loading a `.env` adds the variables it does not already have and
 leaves the ones you have overridden exactly as you typed them.
+
+## PostgreSQL applications
+
+An application can be a local PostgreSQL server instead of a group of repositories: **New
+application** → **PostgreSQL**. The form starts by listing the clusters already on the machine, and
+picking one fills in the rest.
+
+**Discovery** looks in two places, and never walks the disk:
+
+- **Running servers**, from the process table. A running postmaster gives up nearly everything: its
+  working directory is its data directory, its port is in `postmaster.pid`, its binary names the bin
+  directory (Homebrew's versioned `Cellar/…/14.20/bin` is swapped for the stable
+  `opt/postgresql@14/bin` when that points at the same binary), and its stderr is the log file
+  `pg_ctl -l` redirected it to.
+- **Stopped clusters**, in the directories installers use — Homebrew's `var/` on both architectures and
+  Postgres.app's — and in the home directory's own subdirectories, where a hand-made `~/pg14_data`
+  lives. The folders macOS guards with a privacy prompt (Desktop, Documents, Downloads, …) are skipped.
+  A stopped cluster anywhere else has to be typed in.
+
+A cluster an application already runs is listed but not offered.
+
+| Setting | |
+| --- | --- |
+| Data directory | An existing cluster — the directory holding `PG_VERSION`. Paddock does not run `initdb` |
+| Port | Default `5432` |
+| User / password | What the database tools connect as. Blank user is the account running Paddock; blank password is trust auth |
+| Maintenance database | Default `postgres` — where `CREATE` / `DROP DATABASE` connect |
+| Bin directory | Where `pg_ctl` lives. Blank uses the one on the PATH; set it when several major versions are installed, because a cluster only starts under the version that created it |
+| Log file | Where `pg_ctl -l` writes the server log. Blank is Paddock's own, beside its other logs |
+
+**The server is not Paddock's child.** Start runs `pg_ctl start -w`, which daemonises the postmaster
+into a session of its own; Stop runs `pg_ctl stop -m fast`. So:
+
+- Stopping, restarting or killing Paddock — Ctrl-C, a login-item restart, a crash — never takes the
+  server down, and nothing is reaped at the next start.
+- A server may already be up when Paddock is. Its status is read from the data directory's
+  `postmaster.pid` on every read, and on every port scan while a dashboard is open — the same file
+  `pg_ctl status` reads — so a server started from a terminal shows as **running** within seconds,
+  and one stopped from a terminal as **stopped**. Start on a running server is a no-op.
+- Deleting the application forgets the server and leaves it exactly as it is.
+- The database tools connect to the port the running server reports, which is not necessarily the
+  configured one when something else started it.
+
+The one process an application of this kind has, named `postgres`, is derived from the settings on
+every read and never stored, so it has no Edit or Delete of its own. A change to the data directory,
+port, bin directory or log file flags a running server for restart.
+
+The log file is followed into the log viewer and `read_logs`, from the moment Paddock starts watching
+it: what the server logged while Paddock was down is in the file, not in the viewer. A start that
+fails reports pg_ctl's line and the server's own `FATAL:` line together
+(`pg_ctl: could not start server — … FATAL:  could not create any TCP/IP sockets`), so the reason is
+on the row without opening the log.
+
+Stop is a *fast* shutdown on purpose. A *smart* one — what a SIGTERM asks for — waits for every
+client to disconnect, and a dev server's connection pool never does. Fast terminates the sessions and
+writes a shutdown checkpoint, so the next start needs no recovery. pg_ctl waits up to 60 s for either
+to finish; a checkpoint that takes longer leaves the stop reported as failed while the server finishes
+shutting down, and the next read shows where it got to.
+
+### The SQL console
+
+A PostgreSQL application's page has a SQL console between the server and its log: pick a database,
+write SQL, **Run** (or ⌘/Ctrl+Enter, which runs the selection when there is one).
+
+- **Read-only unless you say otherwise.** A run goes in a `READ ONLY` transaction, one statement,
+  exactly as the agent's `query` tool does — a stray `DELETE` is refused by the server, and
+  `COMMIT; …` cannot get out of it. Tick **Allow writes** and the SQL runs committed, several
+  statements at once if you send them, like `execute`.
+- Rows come back as arrays beside their column names, so a join's two `id` columns are two columns.
+  NULL is shown as NULL, JSON as JSON, `bytea` as `\x…`. Past 1000 rows the grid stops and says so —
+  the full result is still read first, so put a `LIMIT` on a big table.
+- A mistake comes back as PostgreSQL wrote it: the message, a caret under the character `position`
+  points at (in the selection, when that is what ran), the detail, the hint and the SQLSTATE.
+- A server that is not running is refused before any connection is tried, for the console and the
+  agent's tools alike — rather than an ECONNREFUSED, or an answer from whatever else holds the port.
+- Statements are bounded by `PADDOCK_PG_STATEMENT_TIMEOUT_MS`.
 
 ## Driving it from an agent
 
@@ -126,12 +216,42 @@ private overlay network — not by binding `0.0.0.0`. If a client cannot connect
 | 🔎 | `get_port_info` | Everything known about one port |
 | ✋ | `stop_port` | Free a port by stopping its current owner |
 
+For a PostgreSQL application, every one of these takes its `application_id` and an explicit
+`database` where one applies — there is no session state between calls:
+
+| | Tool | What it does |
+| --- | --- | --- |
+| 🩺 | `cluster_info` | Version, uptime, data directory, host/port, database count — "is the DB up?" |
+| 🗄️ | `list_databases` | Databases with owner, encoding, size, open connections |
+| 📂 | `list_schemas` | User schemas in a database |
+| 📑 | `list_tables` | Tables/views with estimated rows and size |
+| 🔬 | `describe_table` | Columns, indexes, constraints, incoming foreign keys |
+| 📖 | `query` | SELECT in a `READ ONLY` transaction, always rolled back |
+| ✍️ | `execute` | INSERT/UPDATE/DELETE/DDL, committed |
+| ➕ | `create_database` | `CREATE DATABASE`, optional owner/template |
+| 🗑️ | `drop_database` | `DROP DATABASE … WITH (FORCE)`, requires `confirm: true` |
+
 `read_logs` returns a `next_seq` cursor. Pass it back as `since_seq` to get only what has appeared
 since — an agent following a boot does not re-download the history on every poll.
 
-**The agent cannot run arbitrary commands.** Every tool takes ids and port numbers only. There is no
-tool that creates, edits or deletes a process, and none that accepts a path or a shell string. An
+`query` vs `execute`: read-only-ness is enforced by the server (`BEGIN READ ONLY`), not by parsing
+SQL, and `query` sends its SQL over the extended protocol, which accepts exactly one statement. Both
+halves matter: over the simple protocol, `COMMIT; DELETE …` ends the read-only transaction and the
+DELETE runs committed — measured, it wrote. So `query` cannot write no matter what is passed. `query`
+materialises the whole result before
+truncating to `max_rows` — put a `LIMIT` in the SQL. `drop_database` refuses `postgres`, `template0`,
+`template1` and the application's maintenance database. A PostgreSQL error comes back with its
+`code`, `detail`, `hint` and `position`, which is what an agent needs to fix its SQL.
+
+**The lifecycle tools cannot run arbitrary commands.** They take ids and port numbers only. There is
+no tool that creates, edits or deletes a process, and none that accepts a path or a shell string. An
 agent operates what you registered and can free a port; it cannot invent something to run.
+
+**The SQL tools are the exception, and it is a real one.** `execute` runs whatever it is sent as the
+configured role. When that role is a superuser — which the role `initdb` creates is — PostgreSQL's
+`COPY … TO PROGRAM` runs a shell command as the OS user running the server. An agent with `execute`
+against such a cluster can run commands on your machine. Configure a non-superuser role for an
+application whose databases you do not want an agent to have that reach into.
 
 <details>
 <summary>What that flow looks like</summary>
@@ -164,6 +284,9 @@ This is the part that is easy to fake, so it is worth stating plainly.
   `runtime.json` and reaped on the next start — but only after re-checking that the group leader
   still matches the recorded command **and** start time, because pids get recycled and killing a
   stranger's process is worse than leaving an orphan.
+- The port is bound **before** anything is reaped. A second Paddock started while one is already
+  running on the same data directory exits on the taken port having touched nothing — rather than
+  reaping every service the running one supervises first.
 - stdout and stderr are always consumed. An unread pipe blocks the child at about 192 KB, which
   looks exactly like a hung dev server.
 
@@ -231,6 +354,8 @@ rather than silently skipping.
 | `PADDOCK_PORT_SCAN_TTL_MS` | `3000` |
 | `PADDOCK_PORT_SCAN_INTERVAL_MS` | `5000` (0 disables background scanning) |
 | `PADDOCK_PORT_STOP_GRACE_MS` | `5000` |
+| `PADDOCK_PG_STATEMENT_TIMEOUT_MS` | `15000` — per statement from a database tool |
+| `PADDOCK_PG_CONNECT_TIMEOUT_MS` | `5000` |
 | `PADDOCK_ENV_FILE` | `.env` beside the server |
 
 Data lives in `%APPDATA%\paddock` on Windows, `~/Library/Application Support/paddock` on macOS, and
@@ -244,12 +369,26 @@ privileged capability, and the boundaries are deliberate:
 
 - Binds loopback, and rejects any request whose `Host` or `Origin` is not a loopback origin, plus any
   connection not from a loopback address. A web page you visit cannot drive your process manager.
-- MCP tools take ids and port numbers only — no shell, no paths, no configuration changes.
+- MCP lifecycle tools take ids and port numbers only — no shell, no paths, no configuration changes.
+  The SQL tools take SQL, and through a superuser role that reaches the shell (`COPY … TO PROGRAM`);
+  the role an application connects as is the boundary there. The dashboard's SQL console is the same
+  capability behind the same loopback and origin guard as the rest of `/api`, and a write from it has
+  to be asked for.
+- PostgreSQL discovery is a dashboard route, not an MCP tool. It reads the process table, the paths
+  of postmasters' working directory, binary and stderr, and the names inside a fixed list of
+  directories. Inside a cluster it reads `PG_VERSION`, `postmaster.pid` and the `port` line of its
+  config files, nothing else, and it never opens a path a request names.
+- A PostgreSQL application's password is stored in `applications.json` (mode 0600) and never leaves
+  the server: views carry `passwordSet`, not the password, so neither the dashboard nor
+  `list_applications` hands it out. The database tools only ever connect over loopback.
 - A process's working directory must be inside its repository path.
 - Favicon discovery only sends requests to ports a scan tied to a managed process with exact or high
   confidence, only over loopback HTTP, and never follows a link or redirect off loopback. Icons reach
   the dashboard as data URLs rendered in `<img>`, never served from Paddock's own origin, so an SVG
   icon cannot run script there.
+- Start at login is a REST-only switch, not an MCP tool: an agent cannot decide what runs when you
+  log in. The entry's command is this checkout and the running node binary, never anything a request
+  supplies.
 - Browse opens the OS folder dialog *from the server process* — a browser never gives a page an
   absolute path — which is only sound because the server is loopback-only. It is not an MCP tool.
 - The Add-process form can browse the filesystem and read a directory's `package.json` and `.env`.
@@ -276,14 +415,17 @@ is still alive, so termination is always confirmed by polling.
 ## Testing
 
 ```bash
-npm test       # 268 tests on node:test — no test framework dependency
+npm test       # 318 tests on node:test — no test framework dependency
 npm run check  # syntax gate across every server source
 ```
 
 The suite covers validation and path containment, atomic writes and corrupt-file recovery, the ring
 buffer and its cursors, the HTTP and MCP surfaces, port correlation — and real process lifecycle
 against real processes: that stopping frees a grandchild's port, that a SIGTERM-ignoring tree gets
-escalated, that concurrent starts spawn exactly one process.
+escalated, that concurrent starts spawn exactly one process. With `initdb` and `pg_ctl` on the PATH it
+also runs real PostgreSQL clusters: start, SQL and a fast stop with pooled connections open, a server
+that outlives the Paddock that started it and is picked up by the next one, one started and stopped
+from a terminal, and discovery. Without them those tests are skipped.
 
 ## Architecture
 
@@ -294,8 +436,8 @@ escalated, that concurrent starts spawn exactly one process.
             REST + SSE                MCP / HTTP
                   └─────────┬──────────┘
                        service.js          ← the only API boundary
-       ┌───────────────┬───────┴───────┬───────────────┐
- applications.js  process-manager.js  ports.js    workspace.js
+       ┌───────────────┬───────┴───────┬───────────────┬──────────────┐
+ applications.js  process-manager.js  ports.js    workspace.js    postgres/
        │               │               │
    json-db.js      log-store.js    platform/   ← the only OS-aware code
 ```
@@ -309,7 +451,11 @@ escalated, that concurrent starts spawn exactly one process.
 - [ports.js](ports.js) — port scan cache, owner correlation, safe termination
 - [workspace.js](workspace.js) — read-only project inspection: directory browsing, scripts, `.env`
 - [favicons.js](favicons.js) — favicon discovery on running services, and its on-disk cache
+- [login-item.js](login-item.js) — start at login: what the entry runs, and whether it has gone stale
 - [service.js](service.js) — the facade the UI and MCP both call, and the view models
+- [postgres/](postgres/) — PostgreSQL applications: pg_ctl lifecycle observed from the data
+  directory, log following, discovery, connection pools, catalog introspection, `CREATE` / `DROP DATABASE`
+- [line-splitter.js](line-splitter.js) — chunks to lines, for a child's pipes and a followed log file
 - [platform/](platform/) — the only code that knows which OS it is on
 - [http/](http/) — REST routes, SSE, static serving, MCP tools
 - [ui/](ui/) — React + Vite dashboard

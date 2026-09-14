@@ -6,6 +6,22 @@
     <meta name="color-scheme" content="dark light" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Paddock — local dev manager</title>
+    <script>
+      // Runs before the first paint. Without it a light-mode user sees the dark theme flash on
+      // every load until the app's own module applies the stored choice. Keep the key in step
+      // with src/useTheme.js.
+      (function () {
+        var theme = 'system';
+        try {
+          theme = localStorage.getItem('paddock.theme') || 'system';
+        } catch (e) {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        }
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

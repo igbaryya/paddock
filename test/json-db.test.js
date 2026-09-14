@@ -144,7 +144,10 @@ describe('json-db', () => {
 
     assert.deepEqual(JSON.parse(stdout), {
       version: 1,
-      applications: [{ id: 'app_child0000', name: 'written-by-parent', processes: [] }],
+      // The child's read migrates the document, which fills in the kind the parent left out.
+      applications: [
+        { id: 'app_child0000', name: 'written-by-parent', kind: 'processes', postgres: null, processes: [] },
+      ],
     });
   });
 
@@ -297,8 +300,8 @@ describe('json-db', () => {
     assert.deepEqual(await db.read(), {
       version: 1,
       applications: [
-        { id: 'app_kept000000', processes: [] },
-        { id: 'app_procs00000', processes: [] },
+        { id: 'app_kept000000', kind: 'processes', postgres: null, processes: [] },
+        { id: 'app_procs00000', kind: 'processes', postgres: null, processes: [] },
       ],
     });
     assert.deepEqual(await listDataDir(), ['applications.json'], 'a migratable document must not be quarantined');

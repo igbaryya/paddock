@@ -11,12 +11,15 @@ export class ApiError extends Error {
    * @param {string} message
    * @param {number} status
    * @param {string|null} code
+   * @param {{code?: string, detail?: string, hint?: string, where?: string, position?: string}|null}
+   *   [database] what PostgreSQL said beyond the message, when the failure was its
    */
-  constructor(message, status, code) {
+  constructor(message, status, code, database = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.database = database;
   }
 }
 
@@ -45,7 +48,7 @@ async function request(method, path, options = {}) {
   const payload = await res.json().catch(() => null);
   if (!res.ok) {
     const message = payload?.error?.message ?? `${method} ${path} failed (HTTP ${res.status})`;
-    throw new ApiError(message, res.status, payload?.error?.code ?? null);
+    throw new ApiError(message, res.status, payload?.error?.code ?? null, payload?.error?.database ?? null);
   }
   return payload;
 }
@@ -58,7 +61,7 @@ export const createApplication = (input) => request('POST', '/applications', { b
 
 /**
  * @param {string} applicationId
- * @param {{name?: string, description?: string}} patch
+ * @param {{name?: string, description?: string, autoStart?: boolean}} patch
  */
 export const updateApplication = (applicationId, patch) =>
   request('PATCH', appPath(applicationId), { body: patch });
@@ -119,6 +122,36 @@ export const stopPort = (port) => request('POST', `/ports/${port}/stop`);
  * @param {AbortSignal} [signal]
  */
 export const listFavicons = (signal) => request('GET', '/favicons', { signal });
+
+/** @param {string} applicationId @param {AbortSignal} [signal] */
+export const listDatabases = (applicationId, signal) =>
+  request('GET', `${appPath(applicationId)}/databases`, { signal });
+
+/**
+ * One run of the SQL console. `readOnly` defaults to true on the manager too: a write has to be asked
+ * for, and a read-only run takes a single statement.
+ * @param {string} applicationId
+ * @param {{database: string, sql: string, readOnly: boolean}} input
+ */
+export const runStatement = (applicationId, input) =>
+  request('POST', `${appPath(applicationId)}/sql`, { body: input });
+
+/**
+ * PostgreSQL clusters found on this machine — running ones and stopped ones in the usual places —
+ * each with the application that already runs it, if any.
+ * @param {AbortSignal} [signal]
+ */
+export const discoverClusters = (signal) => request('GET', '/postgres/discover', { signal });
+
+/** @param {AbortSignal} [signal] */
+export const getSettings = (signal) => request('GET', '/settings', { signal });
+
+/**
+ * Only the keys sent change. `{startAtLogin: true}` while already on rewrites the login entry, which
+ * is how a stale one is repaired.
+ * @param {{startAtLogin?: boolean}} patch
+ */
+export const updateSettings = (patch) => request('PATCH', '/settings', { body: patch });
 
 /**
  * Ask the manager to open the operating system's folder dialog. Resolves when the user has chosen or

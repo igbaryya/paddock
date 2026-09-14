@@ -1,5 +1,5 @@
 /**
- * The persistent navigation rail: the two sections of the app, then the applications themselves as
+ * The persistent navigation rail: the sections of the app, then the applications themselves as
  * a quick switcher.
  *
  * The switcher is duplication of what the overview grid shows, and it earns its place — moving
@@ -7,6 +7,7 @@
  */
 import StatusDot from './StatusDot.jsx';
 import Icon, { Logo } from './Icon.jsx';
+import ThemeSwitcher from './ThemeSwitcher.jsx';
 import { Link, paths } from '../router.jsx';
 
 const CONNECTION_LABEL = {
@@ -23,6 +24,7 @@ const CONNECTION_LABEL = {
 export default function Sidebar({ applications, route, connection, portCount, onCreate }) {
   const onOverview = route.name === 'overview';
   const onPorts = route.name === 'ports';
+  const onSettings = route.name === 'settings';
 
   return (
     <nav className="sidebar" aria-label="Main">
@@ -60,6 +62,16 @@ export default function Sidebar({ applications, route, connection, portCount, on
             {portCount !== null && <span className="nav-count">{portCount}</span>}
           </Link>
         </li>
+        <li>
+          <Link
+            to={paths.settings()}
+            className={`nav-item${onSettings ? ' active' : ''}`}
+            aria-current={onSettings ? 'page' : undefined}
+          >
+            <Icon name="settings" />
+            Settings
+          </Link>
+        </li>
       </ul>
 
       {applications.length > 0 && (
@@ -88,7 +100,12 @@ export default function Sidebar({ applications, route, connection, portCount, on
         </>
       )}
 
-      <button type="button" className="btn primary wide sidebar-cta" onClick={onCreate}>
+      {/* In the footer with the other always-there controls, so it is one click from any page. */}
+      <div className="sidebar-foot">
+        <ThemeSwitcher />
+      </div>
+
+      <button type="button" className="btn primary wide" onClick={onCreate}>
         <Icon name="plus" />
         New application
       </button>

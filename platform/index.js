@@ -89,11 +89,12 @@ export const listListeningPorts = impl.listListeningPorts;
 export const processSnapshot = impl.processSnapshot;
 
 /**
- * Working directory and executable path of one pid, best effort. Either may be null, and null means
- * "could not read it": on Windows a working directory is never readable at all, and on POSIX a
- * process we do not own reports nothing.
+ * Working directory, executable path and the file stderr is redirected to, for one pid, best effort.
+ * Any may be null, and null means "could not read it": on Windows none of them is readable here, on
+ * POSIX a process we do not own reports nothing, and a stderr that is a pipe or a terminal has no path.
  * @param {number} pid
- * @returns {Promise<{workingDirectory: string|null, executablePath: string|null}>}
+ * @returns {Promise<{workingDirectory: string|null, executablePath: string|null,
+ *                    stderrPath: string|null}>}
  */
 export const processPaths = impl.processPaths;
 
@@ -129,3 +130,34 @@ export const processExists = impl.processExists;
  *                   {status: 'unavailable', reason: string}>}
  */
 export const pickDirectory = impl.pickDirectory;
+
+/**
+ * @typedef {{label: string, home: string, program: string, args: string[], workingDirectory: string,
+ *            logFile: string, launcherDir: string, env: Record<string, string>}} LoginItemSpec
+ *   Everything an entry needs, decided above this layer: `label` names it, `home` is where the
+ *   per-user entry lives (a parameter so a test never writes into the real one), `launcherDir` is
+ *   where a platform that needs a launcher file keeps it.
+ */
+
+/**
+ * Whether this user's login starts Paddock, and where that entry lives. `startNowCommand` is the
+ * command that would start the entry without logging out, where the OS has one.
+ * @param {LoginItemSpec} spec
+ * @returns {Promise<{supported: boolean, reason: string|null, note: string|null, installed: boolean,
+ *                    location: string, startNowCommand: string|null}>}
+ */
+export const loginItemStatus = impl.loginItemStatus;
+
+/**
+ * Write the entry, replacing one already there. It takes effect at the next login and never starts
+ * anything now: a second Paddock started beside this one could only exit on the taken port.
+ * @param {LoginItemSpec} spec
+ */
+export const installLoginItem = impl.installLoginItem;
+
+/**
+ * Remove the entry. The running Paddock is never stopped by this, even when the entry is what
+ * started it — it keeps running until logout, with every service it supervises.
+ * @param {LoginItemSpec} spec
+ */
+export const removeLoginItem = impl.removeLoginItem;

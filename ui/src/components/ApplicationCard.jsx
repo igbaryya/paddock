@@ -50,9 +50,13 @@ export default function ApplicationCard({ application, favicons, busy, onAction 
     <Link to={paths.application(application.id)} className="card" aria-label={application.name}>
       <header className="card-head">
         <StatusDot status={application.status} showLabel />
-        <span className="card-counts">
-          {counts.running}/{counts.enabled} running
-        </span>
+        {application.kind === 'postgres' ? (
+          <span className="tag">PostgreSQL</span>
+        ) : (
+          <span className="card-counts">
+            {counts.running}/{counts.enabled} running
+          </span>
+        )}
       </header>
 
       <h3 className="card-title">

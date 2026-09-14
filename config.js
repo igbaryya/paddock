@@ -10,7 +10,8 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
+/** This checkout. Exported for the login item, which has to name the copy of Paddock it starts. */
+export const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ENV_FILE = process.env.PADDOCK_ENV_FILE || path.join(ROOT_DIR, '.env');
 
 const warn = (message) => console.error(`[paddock] ${message}`);
@@ -123,6 +124,12 @@ export const PORT_SCAN_INTERVAL_MS = intFromEnv('PADDOCK_PORT_SCAN_INTERVAL_MS',
 
 /** Grace an unmanaged process gets between the polite signal and the forced one. */
 export const PORT_STOP_GRACE_MS = intFromEnv('PADDOCK_PORT_STOP_GRACE_MS', 5_000);
+
+/** How long one statement from a database tool may run before PostgreSQL cancels it. */
+export const PG_STATEMENT_TIMEOUT_MS = intFromEnv('PADDOCK_PG_STATEMENT_TIMEOUT_MS', 15_000);
+
+/** How long a database tool waits to connect to a PostgreSQL application's server. */
+export const PG_CONNECT_TIMEOUT_MS = intFromEnv('PADDOCK_PG_CONNECT_TIMEOUT_MS', 5_000);
 
 /** Built UI. Absent until `npm run build` in ui/ — http/static.js says so rather than failing. */
 export const UI_DIR = path.join(ROOT_DIR, 'ui', 'dist');

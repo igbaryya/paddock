@@ -408,6 +408,39 @@ suite('startApplication starts enabled processes in order, skips disabled, and s
     assert.deepEqual(logs.entries.map((e) => e.message), ['first', 'second', 'third']);
   });
 
+// --- autoStartApplications -------------------------------------------------------------------
+
+suite('autoStartApplications starts only the applications marked to, in order, and survives a crash',
+  async (t) => {
+    const crashing = await createApp([{ name: 'boom', command: COMMANDS.crasher('boom') }]);
+    const unmarked = await createApp([{ name: 'idle', command: COMMANDS.runner('idle') }]);
+    const marked = await createApp([
+      { name: 'web', command: COMMANDS.runner('web') },
+      { name: 'off', command: COMMANDS.runner('off'), enabled: false },
+    ]);
+    t.after(() => Promise.all([crashing, unmarked, marked].map((app) => dispose(app.id))));
+    await service.updateApplication(crashing.id, { autoStart: true });
+    await service.updateApplication(marked.id, { autoStart: true });
+
+    const outcomes = await service.autoStartApplications();
+
+    assert.deepEqual(
+      outcomes.map((o) => ({ id: o.applicationId, statuses: o.results.map((r) => `${r.name}:${r.status}`) })),
+      [
+        { id: crashing.id, statuses: ['boom:crashed'] },
+        { id: marked.id, statuses: ['web:running'] },
+      ],
+      'marked applications only, in configured order, and a crash in the first does not stop the second'
+    );
+    assert.equal((await viewOf(unmarked.id)).processes[0].status, 'stopped');
+    assert.equal(
+      (await viewOf(marked.id)).processes.find((p) => p.name === 'off').status,
+      'stopped',
+      'a disabled process stays down, exactly as a click on Start leaves it'
+    );
+    assert.equal((await viewOf(marked.id)).autoStart, true);
+  });
+
 // --- stopApplication -------------------------------------------------------------------------
 
 const trapper = (name) => `trap 'echo ${name}-term; exit 0' TERM; sleep ${LONG}`;
@@ -647,6 +680,60 @@ suite('a running service that serves a favicon gets it on its view, and loses it
     await service.removeProcess(app.id, id);
     assert.deepEqual((await service.listFavicons()).favicons, {});
   });
+
+// --- PostgreSQL applications -----------------------------------------------------------------
+
+/** A directory that passes validation without a server behind it — enough for view and refusal tests. */
+async function fakeCluster() {
+  const dir = path.join(DATA_DIR, unique('fake-cluster'));
+  await fs.mkdir(dir);
+  await fs.writeFile(path.join(dir, 'PG_VERSION'), '16\n');
+  return dir;
+}
+
+suite('a PostgreSQL application is one derived postgres server, and its view never carries the password',
+  async (t) => {
+    const dataDirectory = await fakeCluster();
+    const app = await service.createApplication({
+      name: unique('pg-view'),
+      kind: 'postgres',
+      postgres: { dataDirectory, port: 6543, user: 'dev', password: 'hunter2' },
+    });
+    t.after(() => dispose(app.id));
+
+    assert.equal(app.kind, 'postgres');
+    assert.deepEqual(app.postgres, {
+      dataDirectory,
+      port: 6543,
+      binDirectory: null,
+      user: 'dev',
+      maintenanceDatabase: 'postgres',
+      logFile: null,
+      host: 'localhost',
+      passwordSet: true,
+    });
+    assert.equal(JSON.stringify(app).includes('hunter2'), false, 'the password leaked into the view');
+
+    assert.equal(app.processes.length, 1);
+    const [server] = app.processes;
+    assert.equal(server.id, 'postgres');
+    const logFile = path.join(DATA_DIR, 'logs', app.id, 'postgresql.log');
+    assert.equal(server.command, `pg_ctl start -D ${dataDirectory} -l ${logFile} -o "-p 6543"`);
+    // Never started and no postmaster.pid: stopped, with nothing to say about it.
+    assert.equal(server.status, 'stopped');
+    assert.equal(server.pid, null);
+    assert.deepEqual(app.processCounts, { total: 1, enabled: 1, running: 0, stopped: 1, crashed: 0, failed: 0 });
+  });
+
+suite('the database tools refuse an application that is not a PostgreSQL one', async (t) => {
+  const app = await createApp([]);
+  t.after(() => dispose(app.id));
+  await assert.rejects(service.listDatabases(app.id), (err) => {
+    assert.equal(err.name, 'ValidationError');
+    assert.match(err.message, /not a PostgreSQL application/);
+    return true;
+  });
+});
 
 // The data directory belongs to this run alone; leaving it behind accumulates one
 // directory per run in the system temp folder.

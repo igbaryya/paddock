@@ -71,12 +71,39 @@ export async function readJsonBody(req, limitBytes = 1_048_576) {
 
 /**
  * Map a thrown domain error onto a status code. Anything unrecognised is a bug in us, not in the
- * caller, so it is a 500.
+ * caller, so it is a 500. A PostgreSQL error is the SQL the caller sent, so it is a 400.
  * @param {unknown} err
  * @returns {number}
  */
 export function httpErrorStatus(err) {
-  if (isNamed(err, 'ValidationError')) return 400;
+  if (isNamed(err, 'ValidationError') || isNamed(err, 'DatabaseError')) return 400;
   if (isNamed(err, 'NotFoundError')) return 404;
   return 500;
+}
+
+/** Where PostgreSQL puts the part of an error that says how to fix the SQL. */
+const DATABASE_ERROR_FIELDS = ['code', 'detail', 'hint', 'where', 'position'];
+
+/**
+ * The fields of a PostgreSQL error beyond its message — its SQLSTATE, and the detail, hint and
+ * character position that point at the mistake. pg names every server error `error`, so the class
+ * is what identifies one.
+ * @param {unknown} err
+ * @returns {Record<string, string>|null} null for anything that is not a PostgreSQL error
+ */
+export function databaseErrorFields(err) {
+  if (!isNamed(err, 'DatabaseError')) return null;
+  return Object.fromEntries(DATABASE_ERROR_FIELDS.filter((field) => err[field]).map((field) => [field, err[field]]));
+}
+
+/**
+ * An error's message, including one that has none of its own: a connection to `localhost` tries
+ * every address it resolves to and, refused on all of them, throws an AggregateError whose message
+ * is empty — the reasons are only on its members.
+ * @param {unknown} err
+ * @returns {string}
+ */
+export function errorMessage(err) {
+  if (err instanceof AggregateError && err.errors.length) return err.errors.map(errorMessage).join('; ');
+  return typeof err?.message === 'string' && err.message ? err.message : String(err);
 }

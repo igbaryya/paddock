@@ -2,6 +2,9 @@
  * The selected application: what it is, whether it is up, and one row per configured process.
  * Application-level controls act on every enabled process in configured order, which is why they
  * are kept visually separate from the per-process controls underneath.
+ *
+ * A PostgreSQL application shows where its server is reached instead of offering to add processes:
+ * its one process comes from its settings, so it is edited through Edit, not on the row.
  */
 import { useEffect, useState } from 'react';
 import StatusDot from './StatusDot.jsx';
@@ -16,6 +19,33 @@ function useSecondsTick() {
     return () => clearInterval(id);
   }, []);
   return now;
+}
+
+/**
+ * Where the database tools connect, as a URL a developer can paste into psql, and where the server's
+ * files are. The password is never in the view, so it is never in the URL either.
+ * @param {{settings: object}} props the application's `postgres` view
+ */
+function PostgresFacts({ settings }) {
+  const url = `postgresql://${settings.user}@${settings.host}:${settings.port}/${settings.maintenanceDatabase}`;
+  return (
+    <>
+      <dl className="process-facts">
+        <dt>url</dt>
+        <dd><code>{url}</code>{settings.passwordSet && <span className="meta"> password saved</span>}</dd>
+        <dt>data</dt>
+        <dd><code>{settings.dataDirectory}</code></dd>
+        <dt>bin</dt>
+        <dd><code>{settings.binDirectory ?? 'pg_ctl on PATH'}</code></dd>
+        <dt>log</dt>
+        <dd><code>{settings.logFile ?? "Paddock's own"}</code></dd>
+      </dl>
+      <p className="hint">
+        Run with pg_ctl, outside Paddock: it keeps running when Paddock stops, and a server started
+        from a terminal shows here as running.
+      </p>
+    </>
+  );
 }
 
 /**
@@ -40,6 +70,7 @@ export default function ApplicationPane({
   const now = useSecondsTick();
   const counts = application.processCounts;
   const waiting = busy.has(application.id);
+  const postgres = application.kind === 'postgres';
 
   return (
     <section className="pane" aria-label={`Application ${application.name}`}>
@@ -47,6 +78,7 @@ export default function ApplicationPane({
         <div className="pane-title">
           <StatusDot status={application.status} showLabel />
           <h2>{application.name}</h2>
+          {postgres && <span className="tag">PostgreSQL</span>}
           <span className="counts">
             {counts.running}/{counts.enabled} running &middot; {counts.total} configured
             {counts.crashed > 0 && ` · ${counts.crashed} crashed`}
@@ -54,6 +86,7 @@ export default function ApplicationPane({
           </span>
         </div>
         {application.description && <p className="muted">{application.description}</p>}
+        {postgres && <PostgresFacts settings={application.postgres} />}
         <div className="actions">
           <button type="button" className="btn primary" disabled={waiting} onClick={() => onAction('start')}>
             <Icon name="play" />
@@ -68,10 +101,12 @@ export default function ApplicationPane({
             Restart
           </button>
           <span className="spacer" />
-          <button type="button" className="btn ghost" onClick={onAddProcess}>
-            <Icon name="plus" />
-            Add process
-          </button>
+          {!postgres && (
+            <button type="button" className="btn ghost" onClick={onAddProcess}>
+              <Icon name="plus" />
+              Add process
+            </button>
+          )}
           <button type="button" className="btn ghost" onClick={onEdit}>
             <Icon name="pencil" />
             Edit
@@ -96,9 +131,10 @@ export default function ApplicationPane({
               now={now}
               busy={busy.has(process.id)}
               stale={staleProcesses.includes(process.id)}
+              pathLabel={postgres ? 'data' : 'repo'}
               onAction={(action) => onProcessAction(process.id, action)}
-              onEdit={() => onEditProcess(process)}
-              onDelete={() => onDeleteProcess(process)}
+              onEdit={postgres ? null : () => onEditProcess(process)}
+              onDelete={postgres ? null : () => onDeleteProcess(process)}
             />
           ))}
         </ul>
