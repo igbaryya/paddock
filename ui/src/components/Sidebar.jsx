@@ -30,7 +30,7 @@ export default function Sidebar({ applications, route, connection, portCount, on
     <nav className="sidebar" aria-label="Main">
       <div className="sidebar-head">
         <Link to={paths.overview()} className="brand">
-          <Logo />
+          <Logo size={24} />
           <span className="brand-name">Paddock</span>
         </Link>
         <span className={`conn conn-${connection}`} role="status">
@@ -75,7 +75,7 @@ export default function Sidebar({ applications, route, connection, portCount, on
       </ul>
 
       {applications.length > 0 && (
-        <>
+        <div className="sidebar-section">
           <p className="sidebar-label">Switch to</p>
           <ul className="app-list">
             {applications.map((application) => {
@@ -97,18 +97,17 @@ export default function Sidebar({ applications, route, connection, portCount, on
               );
             })}
           </ul>
-        </>
+        </div>
       )}
 
-      {/* In the footer with the other always-there controls, so it is one click from any page. */}
+      {/* The always-there controls, pinned together so each is one click from any page. */}
       <div className="sidebar-foot">
         <ThemeSwitcher />
+        <button type="button" className="nav-item sidebar-add" onClick={onCreate}>
+          <Icon name="plus" />
+          New application
+        </button>
       </div>
-
-      <button type="button" className="btn primary wide" onClick={onCreate}>
-        <Icon name="plus" />
-        New application
-      </button>
     </nav>
   );
 }

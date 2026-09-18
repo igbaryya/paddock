@@ -884,6 +884,22 @@ describe('PostgreSQL applications', () => {
     await rejectsWith(createPostgres({}), apps.ValidationError, 'dataDirectory');
   });
 
+  test('an application may be named first and have its server defined afterwards', async () => {
+    const app = await apps.createApplication({ name: unique('pg-later'), kind: 'postgres' });
+    assert.equal(app.postgres, null);
+    assert.deepEqual(app.processes, []);
+
+    // The first settings define the server, so they need what a create needs.
+    await rejectsWith(apps.updateApplication(app.id, { postgres: { port: 5433 } }), apps.ValidationError, 'dataDirectory');
+    const renamed = await apps.updateApplication(app.id, { name: unique('pg-later') });
+    assert.equal(renamed.postgres, null);
+
+    const defined = await apps.updateApplication(app.id, { postgres: { dataDirectory: await freshCluster(), port: 5433 } });
+    assert.equal(defined.postgres.port, 5433);
+    assert.equal(defined.postgres.user, os.userInfo().username);
+    assert.equal(defined.postgres.maintenanceDatabase, 'postgres');
+  });
+
   test('a port must be an integer in range — a string that looks like one is a form bug', async () => {
     const dataDirectory = await freshCluster();
     await rejectsWith(createPostgres({ dataDirectory, port: '5432' }), apps.ValidationError, 'port');

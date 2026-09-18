@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The favicon's shape as a macOS template image: black and alpha only, the P and its dot cut out. -->
+  <mask id="mark">
+    <rect width="32" height="32" fill="#fff"/>
+    <path d="M7.8 23.7V7.9h5.6a5 5 0 0 1 0 10H7.8" fill="none" stroke="#000" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="23.9" cy="23.4" r="2.6" fill="#000"/>
+  </mask>
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="#000" mask="url(#mark)"/>
+</svg>

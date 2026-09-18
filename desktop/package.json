@@ -1,0 +1,25 @@
+{
+  "name": "paddock-desktop",
+  "productName": "Paddock",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Paddock as a desktop application — the same server and dashboard, in a window and a tray",
+  "author": "local-dev contributors",
+  "license": "MIT",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "icons": "electron scripts/render-icons.js",
+    "dist": "electron-builder --config electron-builder.config.js",
+    "dist:mac": "electron-builder --config electron-builder.config.js --mac",
+    "dist:win": "electron-builder --config electron-builder.config.js --win"
+  },
+  "devDependencies": {
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

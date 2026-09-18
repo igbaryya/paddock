@@ -12,6 +12,7 @@
  */
 import { useEffect, useState } from 'react';
 import { listDirectory } from '../api.js';
+import Icon from './Icon.jsx';
 
 const SEPARATOR = /[/\\]/;
 
@@ -120,6 +121,7 @@ export default function DirectoryPicker({ start, onPick, onCancel }) {
         {listing.parent && (
           <li>
             <button type="button" className="picker-entry" onClick={() => setDir(listing.parent)}>
+              <Icon name="back" size={13} />
               <span className="picker-up">..</span>
             </button>
           </li>
@@ -127,6 +129,7 @@ export default function DirectoryPicker({ start, onPick, onCancel }) {
         {visible.map((entry) => (
           <li key={entry.path}>
             <button type="button" className="picker-entry" onClick={() => setDir(entry.path)}>
+              <Icon name="folder" size={13} />
               {entry.name}
             </button>
           </li>

@@ -1,24 +1,29 @@
 /**
- * One application in full: its controls, every process, and the log tail — and for a PostgreSQL
- * application, the SQL console between them.
+ * One application in full: its toolbar, its processes as a grid of tiles, and the log tail filling
+ * the rest of the window — and for a PostgreSQL application with a server, the SQL console between
+ * them.
  *
  * `application` is null both before the first fetch and when the id in the URL does not exist, and
  * those are different situations — a link someone saved after deleting the application should say
  * so rather than spinning forever.
  */
-import ApplicationPane from '../components/ApplicationPane.jsx';
+import ApplicationHeader from '../components/ApplicationHeader.jsx';
+import EmptyState from '../components/EmptyState.jsx';
+import ProcessGrid from '../components/ProcessGrid.jsx';
 import LogViewer from '../components/LogViewer.jsx';
 import SqlConsole from '../components/SqlConsole.jsx';
 import { Link, paths } from '../router.jsx';
 
 /**
- * @param {{application: object|null, loaded: boolean, logs: object[], busy: Set<string>,
- *          staleProcesses: string[], onClearLogs: () => void, onAction: Function,
- *          onEdit: Function, onDelete: Function, onAddProcess: Function,
- *          onProcessAction: Function, onEditProcess: Function, onDeleteProcess: Function}} props
+ * @param {{application: object|null, favicons: Record<string, object>, loaded: boolean,
+ *          logs: object[], busy: Set<string>, staleProcesses: string[], onClearLogs: () => void,
+ *          onAction: Function, onEdit: Function, onDelete: Function, onAddProcess: Function,
+ *          onProcessAction: Function, onEditProcess: Function, onDeleteProcess: Function,
+ *          onEditPostgres: Function}} props
  */
 export default function ApplicationPage({
   application,
+  favicons,
   loaded,
   logs,
   busy,
@@ -31,16 +36,17 @@ export default function ApplicationPage({
   onProcessAction,
   onEditProcess,
   onDeleteProcess,
+  onEditPostgres,
 }) {
   if (!application) {
     return loaded ? (
-      <div className="empty">
-        <h2>No such application</h2>
-        <p>It may have been deleted, or the link may be out of date.</p>
-        <Link to={paths.overview()} className="btn primary">
-          Back to applications
-        </Link>
-      </div>
+      <EmptyState
+        icon="alert"
+        title="No such application"
+        action={<Link to={paths.overview()} className="btn primary">Back to applications</Link>}
+      >
+        It may have been deleted, or the link may be out of date.
+      </EmptyState>
     ) : (
       <p className="empty-inline">Loading…</p>
     );
@@ -48,29 +54,41 @@ export default function ApplicationPage({
 
   return (
     <>
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <Link to={paths.overview()}>Applications</Link>
-        <span aria-hidden="true">/</span>
-        <span aria-current="page">{application.name}</span>
-      </nav>
-
-      <ApplicationPane
+      <ApplicationHeader
         application={application}
-        busy={busy}
-        staleProcesses={staleProcesses}
+        favicons={favicons}
+        busy={busy.has(application.id)}
         onAction={onAction}
         onEdit={onEdit}
         onDelete={onDelete}
         onAddProcess={onAddProcess}
-        onProcessAction={onProcessAction}
-        onEditProcess={onEditProcess}
-        onDeleteProcess={onDeleteProcess}
       />
+
+      <section className="section" aria-label="Processes">
+        {/* A PostgreSQL application is one server, so only a group of processes is worth counting. */}
+        {application.kind === 'postgres' ? (
+          <h2 className="section-title">Server</h2>
+        ) : (
+          <h2 className="section-title">
+            Processes
+            <span className="section-count">{application.processes.length}</span>
+          </h2>
+        )}
+        <ProcessGrid
+          application={application}
+          busy={busy}
+          staleProcesses={staleProcesses}
+          onProcessAction={onProcessAction}
+          onEditProcess={onEditProcess}
+          onDeleteProcess={onDeleteProcess}
+          onEditPostgres={onEditPostgres}
+        />
+      </section>
 
       {/* Keyed by application like the logs below: a query and its result belong to one server. The
           two keys must differ — they are siblings, and siblings sharing a key leave a stale console
-          behind on the next application. */}
-      {application.kind === 'postgres' && (
+          behind on the next application. There is no console before there is a server to query. */}
+      {application.postgres && (
         <SqlConsole key={`sql:${application.id}`} application={application} />
       )}
 

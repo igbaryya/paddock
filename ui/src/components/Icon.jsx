@@ -1,108 +1,118 @@
 /**
- * The icon set: one inline SVG sprite, drawn here rather than pulled from a package.
+ * The icon set: Lucide's glyphs, behind the names the app already uses.
  *
- * A dependency for twenty paths would be the largest thing in the bundle and would tie the look of
- * the app to someone else's release cadence. These are all built on the same grid — 24×24, 2px
- * stroke, round caps and joins — which is what makes them look like one family.
+ * Call sites name what an icon is for (`restart`, `ports`) rather than which glyph draws it, so the
+ * glyph is chosen once, here, and swapping one never touches a component. Lucide is drawn on a
+ * single grid — 24×24, 2px stroke, round caps and joins — which is what makes the set look like one
+ * family, and only the glyphs imported below end up in the bundle.
  *
  * Every icon inherits `currentColor` and sizes from its `size` prop, so an icon inside a button
  * needs no styling of its own. They are decorative: `aria-hidden` by default, because the control
  * around them always carries the real label.
  */
+import {
+  Activity,
+  ArrowDown,
+  ArrowLeftRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CircleStop,
+  Clock,
+  Copy,
+  Database,
+  ExternalLink,
+  Folder,
+  Globe,
+  Info,
+  LayoutGrid,
+  Monitor,
+  Moon,
+  Pencil,
+  Play,
+  Plus,
+  Power,
+  RefreshCw,
+  RotateCw,
+  Search,
+  SlidersHorizontal,
+  Sun,
+  Terminal,
+  Trash2,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 
-/* Paths only — every icon shares the same stroke treatment, applied once on the <svg>. */
-const PATHS = {
+const GLYPHS = {
   // Applications: four panes, the overview grid itself.
-  grid: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 13h7v7h-7z'],
-  // Ports: traffic in both directions. Symmetric on purpose — at 16px an asymmetric pair of arrows
-  // reads as a single hook rather than as two.
-  ports: ['M4 9h16', 'M16 5l4 4-4 4', 'M20 15H4', 'M8 11l-4 4 4 4'],
-  play: ['M7 4.5v15l12-7.5z'],
-  // A square, not a filled circle: stop reads as "halt", and it pairs with play at the same weight.
-  stop: ['M6.5 6.5h11v11h-11z'],
-  restart: ['M20.5 12a8.5 8.5 0 1 1-2.6-6.1', 'M21 3v5h-5'],
-  plus: ['M12 5v14', 'M5 12h14'],
-  pencil: ['M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3z', 'M14.5 6.5l3 3'],
-  trash: ['M4 7h16', 'M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2', 'M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7', 'M10 11v6', 'M14 11v6'],
-  search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M20 20l-4-4'],
-  refresh: ['M20.5 12a8.5 8.5 0 1 1-2.6-6.1', 'M21 3v5h-5'],
-  close: ['M18 6 6 18', 'M6 6l12 12'],
-  terminal: ['M5 6l5 5-5 5', 'M12 18h7'],
-  alert: ['M12 3 2.5 19.5h19L12 3z', 'M12 10v4', 'M12 17.5h.01'],
-  chevron: ['M9 5l7 7-7 7'],
-  external: ['M14 4h6v6', 'M20 4l-8 8', 'M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4'],
-  check: ['M4 12.5 9.5 18 20 6.5'],
-  // Database: the stacked cylinder, three bands — two would read as a pill at 16px.
-  database: [
-    'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z',
-    'M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6',
-    'M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3',
-  ],
-  // Theme: short rays, so the sun keeps its disc at 16px instead of becoming an asterisk.
-  sun: [
-    'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
-    'M12 2.5v1.5', 'M12 20v1.5', 'M2.5 12H4', 'M20 12h1.5',
-    'M5.3 5.3l1 1', 'M17.7 17.7l1 1', 'M5.3 18.7l1-1', 'M17.7 6.3l1-1',
-  ],
-  moon: ['M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z'],
-  monitor: ['M3.5 5h17v11h-17z', 'M9 20h6', 'M12 16v4'],
-  // Settings: two sliders rather than a gear. A gear's teeth turn to noise at 16px on this 2px stroke.
-  settings: [
-    'M4 7h8',
-    'M16 7h4',
-    'M14 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
-    'M4 17h3',
-    'M11 17h9',
-    'M9 15a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
-  ],
+  grid: LayoutGrid,
+  // Ports: traffic in both directions.
+  ports: ArrowLeftRight,
+  play: Play,
+  // A square inside a ring: a bare outlined square beside a row's other actions reads as a checkbox.
+  stop: CircleStop,
+  // One arrow for bringing a process back up, two for re-reading data — they are different acts.
+  restart: RotateCw,
+  refresh: RefreshCw,
+  plus: Plus,
+  pencil: Pencil,
+  trash: Trash2,
+  search: Search,
+  close: X,
+  terminal: Terminal,
+  alert: TriangleAlert,
+  // Points right: the ports table turns it a quarter to point down when a row is open.
+  chevron: ChevronRight,
+  external: ExternalLink,
+  check: Check,
+  copy: Copy,
+  folder: Folder,
+  back: ChevronLeft,
+  'arrow-down': ArrowDown,
+  // Activity: a pulse trace — something is alive, which is what "running" means on a summary.
+  activity: Activity,
+  clock: Clock,
+  // Globe: reachable from beyond this machine.
+  globe: Globe,
+  power: Power,
+  info: Info,
+  database: Database,
+  sun: Sun,
+  moon: Moon,
+  monitor: Monitor,
+  // Settings: sliders rather than a gear. A gear's teeth turn to noise at 16px.
+  settings: SlidersHorizontal,
 };
 
 /**
- * @param {{name: keyof PATHS, size?: number, className?: string, title?: string}} props
+ * @param {{name: keyof GLYPHS, size?: number, className?: string, title?: string}} props
  *   `title` makes the icon meaningful to a screen reader; without it the icon is hidden, which is
  *   what you want whenever the surrounding control is already labelled.
  */
 export default function Icon({ name, size = 16, className, title }) {
-  const paths = PATHS[name];
-  if (!paths) return null;
+  const Glyph = GLYPHS[name];
+  if (!Glyph) return null;
   return (
-    <svg
+    <Glyph
       className={className ? `icon ${className}` : 'icon'}
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+      size={size}
+      strokeWidth={2}
       role={title ? 'img' : undefined}
       aria-hidden={title ? undefined : 'true'}
       aria-label={title}
     >
       {title && <title>{title}</title>}
-      {paths.map((d) => (
-        <path key={d} d={d} />
-      ))}
-    </svg>
+    </Glyph>
   );
 }
 
 /**
- * The product mark. Three lanes of different lengths in a rounded square — several processes,
- * running at once, in one enclosure. It is filled rather than stroked so it still reads at 16px in
- * a browser tab, and it is kept here so the favicon and the sidebar cannot drift apart.
+ * The product mark — a P and a live dot (see public/favicon.svg). It is the favicon file itself
+ * rather than a copy of its paths, so the tab, the sidebar and the desktop app's icons, which are
+ * rendered from that same file, cannot drift apart. It keeps its own colours in both themes: it is
+ * the brand, not chrome.
  * @param {{size?: number}} props
  */
 export function Logo({ size = 20 }) {
-  return (
-    <svg className="logo" width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <rect width="32" height="32" rx="8" fill="var(--accent)" />
-      <g fill="var(--on-accent)" opacity="0.95">
-        <rect x="7" y="9" width="18" height="3.5" rx="1.75" />
-        <rect x="7" y="14.25" width="12" height="3.5" rx="1.75" />
-        <rect x="7" y="19.5" width="15" height="3.5" rx="1.75" />
-      </g>
-    </svg>
-  );
+  return <img className="logo" src="/favicon.svg" width={size} height={size} alt="" />;
 }

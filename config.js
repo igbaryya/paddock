@@ -12,7 +12,8 @@ import { fileURLToPath } from 'url';
 
 /** This checkout. Exported for the login item, which has to name the copy of Paddock it starts. */
 export const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
-const ENV_FILE = process.env.PADDOCK_ENV_FILE || path.join(ROOT_DIR, '.env');
+/** Exported for the desktop app, which names it when the port is taken and has to be moved. */
+export const ENV_FILE = process.env.PADDOCK_ENV_FILE || path.join(ROOT_DIR, '.env');
 
 const warn = (message) => console.error(`[paddock] ${message}`);
 
@@ -86,6 +87,15 @@ export function resolveDataDir({ env, platform, home = os.homedir() }) {
 
 export const HOST = trimmedEnv('PADDOCK_HOST') || '127.0.0.1';
 
+/** An IPv6 literal only compares equal to a parsed Host header in its bracketed form. */
+export const HOSTNAME = HOST.includes(':') && !HOST.startsWith('[') ? `[${HOST}]` : HOST;
+
+/**
+ * A wildcard bind is not an address the user can open; point them at loopback instead. Exported for
+ * the desktop app, which has to reach a server it did not necessarily start.
+ */
+export const DISPLAY_HOST = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOSTNAME;
+
 /** 0 is legal and means "an ephemeral port"; out of range would throw ERR_SOCKET_BAD_PORT at listen. */
 export const PORT = intFromEnv('PADDOCK_PORT', 4599, { min: 0, max: 65_535 });
 
@@ -110,6 +120,14 @@ export const LOG_PERSIST = boolFromEnv('PADDOCK_LOG_PERSIST', true);
 
 /** How long a process group gets after SIGTERM before it is force-killed. */
 export const STOP_GRACE_MS = intFromEnv('PADDOCK_STOP_GRACE_MS', 5_000);
+
+/**
+ * Ceiling on the graceful stop, so one wedged process group cannot hang the manager's exit. Derived
+ * from the per-process grace rather than fixed: a user who raises STOP_GRACE_MS is asking for a
+ * longer SIGTERM window, and a constant ceiling would cut the SIGKILL escalation off before it ran.
+ * The desktop app waits longer than this before it kills the server outright, for the same reason.
+ */
+export const SHUTDOWN_GRACE_MS = Math.max(15_000, STOP_GRACE_MS + 5_000);
 
 /** How long a freshly spawned process must survive before it counts as running rather than starting. */
 export const START_SETTLE_MS = intFromEnv('PADDOCK_START_SETTLE_MS', 1_500);

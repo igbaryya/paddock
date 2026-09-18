@@ -5,6 +5,7 @@
  * (listening-port inspection) extends this same interface rather than reaching for an OS utility
  * somewhere else.
  */
+import * as desktop from './desktop.js';
 import * as posix from './posix.js';
 import * as win32 from './win32.js';
 
@@ -132,6 +133,12 @@ export const processExists = impl.processExists;
 export const pickDirectory = impl.pickDirectory;
 
 /**
+ * The one seam not chosen by OS alone: under the desktop app the entry is the app, which only the app
+ * can register. A utility process is the only place `process.parentPort` exists.
+ */
+const loginItems = process.parentPort ? desktop : impl;
+
+/**
  * @typedef {{label: string, home: string, program: string, args: string[], workingDirectory: string,
  *            logFile: string, launcherDir: string, env: Record<string, string>}} LoginItemSpec
  *   Everything an entry needs, decided above this layer: `label` names it, `home` is where the
@@ -146,18 +153,18 @@ export const pickDirectory = impl.pickDirectory;
  * @returns {Promise<{supported: boolean, reason: string|null, note: string|null, installed: boolean,
  *                    location: string, startNowCommand: string|null}>}
  */
-export const loginItemStatus = impl.loginItemStatus;
+export const loginItemStatus = loginItems.loginItemStatus;
 
 /**
  * Write the entry, replacing one already there. It takes effect at the next login and never starts
  * anything now: a second Paddock started beside this one could only exit on the taken port.
  * @param {LoginItemSpec} spec
  */
-export const installLoginItem = impl.installLoginItem;
+export const installLoginItem = loginItems.installLoginItem;
 
 /**
  * Remove the entry. The running Paddock is never stopped by this, even when the entry is what
  * started it — it keeps running until logout, with every service it supervises.
  * @param {LoginItemSpec} spec
  */
-export const removeLoginItem = impl.removeLoginItem;
+export const removeLoginItem = loginItems.removeLoginItem;

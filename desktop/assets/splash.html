@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- A local page with nothing to fetch: its own styles and one line of script, the icon beside it. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>Paddock</title>
+    <style>
+      /* The dashboard's tokens (ui/src/styles.css), only the ones this page draws with. It follows the
+         OS theme: the dashboard's own choice is kept in that page's storage, which this one cannot read. */
+      :root {
+        --bg: #0a0d13;
+        --text: #e5e9f0;
+        --text-dim: #8b94a7;
+        --text-faint: #5a6374;
+        --accent: #4f8cff;
+        --track: rgb(255 255 255 / 0.08);
+        --glow: rgb(79 140 255 / 0.22);
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f4f6f8;
+          --text: #161b24;
+          --text-dim: #5c6675;
+          --text-faint: #8b94a2;
+          --accent: #2563eb;
+          --track: rgb(16 24 40 / 0.08);
+          --glow: rgb(37 99 235 / 0.14);
+        }
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+
+      /* The window is frameless, so the whole page is its drag handle. */
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(120% 80% at 50% 0%, var(--glow), transparent 62%), var(--bg);
+        color: var(--text);
+        font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-app-region: drag;
+        user-select: none;
+        cursor: default;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .mark {
+        display: block;
+        width: 88px;
+        height: 88px;
+        filter: drop-shadow(0 10px 24px rgb(0 0 0 / 0.35));
+        animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+      }
+
+      h1 {
+        margin: 20px 0 2px;
+        font-size: 22px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+      }
+
+      .tagline {
+        color: var(--text-dim);
+      }
+
+      /* Indeterminate on purpose: the server says nothing about how far along it is, only when it is up. */
+      .progress {
+        position: relative;
+        width: 132px;
+        height: 3px;
+        margin-top: 28px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--track);
+      }
+
+      .progress::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 40%;
+        border-radius: inherit;
+        background: var(--accent);
+        animation: slide 1.3s ease-in-out infinite;
+      }
+
+      .status {
+        margin-top: 10px;
+        font-size: 11.5px;
+        color: var(--text-faint);
+      }
+
+      .version {
+        position: fixed;
+        right: 0;
+        bottom: 12px;
+        left: 0;
+        text-align: center;
+        font-size: 10.5px;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-faint);
+      }
+
+      @keyframes slide {
+        from { transform: translateX(-100%); }
+        to { transform: translateX(250%); }
+      }
+
+      @keyframes rise {
+        from { opacity: 0; transform: translateY(6px) scale(0.96); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .mark {
+          animation: none;
+        }
+
+        .progress::before {
+          width: 100%;
+          opacity: 0.5;
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <img class="mark" src="icon.png" alt="" />
+    <h1>Paddock</h1>
+    <p class="tagline">Local dev manager</p>
+    <div class="progress" role="progressbar" aria-label="Starting Paddock"></div>
+    <p class="status">Starting the server…</p>
+    <p class="version" id="version"></p>
+    <script>
+      // splash.js passes the app's version in the query; without one the corner stays empty.
+      const version = new URLSearchParams(location.search).get('version');
+      if (version) document.getElementById('version').textContent = `v${version}`;
+    </script>
+  </body>
+</html>

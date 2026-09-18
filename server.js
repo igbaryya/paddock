@@ -11,7 +11,7 @@
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
-import { HOST, PORT, STOP_GRACE_MS } from './config.js';
+import { DISPLAY_HOST, HOST, HOSTNAME, PORT, SHUTDOWN_GRACE_MS } from './config.js';
 import { json } from './http/respond.js';
 import { handleApi } from './http/api.js';
 import { handleEvents, start as startEvents, stop as stopEvents } from './http/events.js';
@@ -24,20 +24,7 @@ import { autoStartApplications, loadFavicons, shutdown as shutdownService } from
 /** Bounded because it costs a login shell startup (~0.5 s) and is only a best-effort improvement. */
 const PATH_RESOLVE_TIMEOUT_MS = 3_000;
 
-/**
- * Ceiling on the graceful stop, so one wedged process group cannot hang the manager's exit. Derived
- * from the per-process grace rather than fixed: a user who raises STOP_GRACE_MS is asking for a
- * longer SIGTERM window, and a constant ceiling would cut the SIGKILL escalation off before it ran.
- */
-const SHUTDOWN_GRACE_MS = Math.max(15_000, STOP_GRACE_MS + 5_000);
-
-/** An IPv6 literal only compares equal to a parsed Host header in its bracketed form. */
-const configuredHostname = HOST.includes(':') && !HOST.startsWith('[') ? `[${HOST}]` : HOST;
-
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', configuredHostname]);
-
-/** A wildcard bind is not an address the user can open; point them at loopback instead. */
-const displayHost = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : configuredHostname;
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', HOSTNAME]);
 
 /**
  * For the last thing printed before `process.exit`. Node's stderr is asynchronous when it is a pipe
@@ -143,7 +130,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.on('error', (err) => {
-  const detail = err.code === 'EADDRINUSE' ? `${displayHost}:${PORT} is already in use` : err.message;
+  const detail = err.code === 'EADDRINUSE' ? `${DISPLAY_HOST}:${PORT} is already in use` : err.message;
   logSync(`cannot serve: ${detail}`);
   process.exit(1);
 });
@@ -217,8 +204,8 @@ async function main() {
   markReady();
   // Printed last, so the line means "usable" — tests and scripts/dev.js wait for it.
   const { port } = server.address();
-  console.log(`[paddock] UI   http://${displayHost}:${port}`);
-  console.log(`[paddock] MCP  http://${displayHost}:${port}/mcp`);
+  console.log(`[paddock] UI   http://${DISPLAY_HOST}:${port}`);
+  console.log(`[paddock] MCP  http://${DISPLAY_HOST}:${port}/mcp`);
   // Last, and not awaited. After the port is held, so a second copy never starts anything; after the
   // reaper, so a leftover from a crashed run has released its port before its replacement binds it;
   // and after the startup line, so the dashboard is usable while the applications come up in it.
@@ -241,6 +228,12 @@ async function autoStart() {
 
 // Node hands the handler the signal name, so one handler body serves all three.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, (name) => shutdown(name));
+
+// Under the desktop app this is an Electron utility process, and quitting the app asks over the port
+// it was forked with: Windows has no SIGTERM to send, and one message path serves every OS.
+process.parentPort?.on('message', ({ data }) => {
+  if (data?.type === 'shutdown') shutdown('quit from the desktop app');
+});
 
 // Last resort only, and synchronous: async work inside 'exit' is discarded, and this handler does
 // not run at all when a signal terminates the process — the handlers above are what normally clean up.

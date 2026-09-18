@@ -32,6 +32,7 @@ process.env.PADDOCK_REAP_ORPHANS = 'false';
 const service = await import('../service.js');
 const dataDirectory = await import('../postgres/data-directory.js');
 const follower = await import('../postgres/log-follower.js');
+const lifecycle = await import('../postgres/lifecycle.js');
 
 const binariesPresent = ['initdb', 'pg_ctl'].every((bin) => spawnSync(bin, ['--version']).status === 0);
 const clusterSkip = process.platform === 'win32'
@@ -102,6 +103,21 @@ after(async () => {
   }
   await service.shutdown();
   await fs.rm(TMP, { recursive: true, force: true });
+});
+
+// --- pg_ctl environment ----------------------------------------------------------------------
+
+describe('the environment pg_ctl inherits', () => {
+  test('a process with no locale — launchd at login — gets LC_ALL=C, so macOS will not thread the postmaster', () => {
+    assert.deepEqual(lifecycle.pgCtlEnv({ PATH: '/usr/bin' }), { PATH: '/usr/bin', LC_ALL: 'C' });
+    assert.equal(lifecycle.pgCtlEnv({ LANG: '' }).LC_ALL, 'C');
+  });
+
+  test('a locale already set is left alone', () => {
+    const env = { LANG: 'he_IL.UTF-8' };
+    assert.equal(lifecycle.pgCtlEnv(env), env);
+    assert.equal(lifecycle.pgCtlEnv({ LC_ALL: 'en_US.UTF-8' }).LC_ALL, 'en_US.UTF-8');
+  });
 });
 
 // --- data directory --------------------------------------------------------------------------

@@ -485,10 +485,12 @@ test('PATCH /api/settings refuses a startAtLogin that is not a boolean, and an e
   assert.equal(empty.json().startAtLogin.enabled, before.startAtLogin.enabled);
 });
 
-test('GET /api/health reports ok and the server pid', async () => {
+test('GET /api/health reports ok, names the service, and gives the server pid', async () => {
   const res = await api('/api/health');
   assert.equal(res.status, 200);
   const body = res.json();
+  // The desktop app attaches to whatever answers this with `paddock`, and refuses anything else.
+  assert.equal(body.service, 'paddock');
   assert.equal(body.status, 'ok');
   assert.equal(body.pid, server.pid);
   assert.equal(typeof body.uptimeMs, 'number');

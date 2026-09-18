@@ -725,6 +725,28 @@ suite('a PostgreSQL application is one derived postgres server, and its view nev
     assert.deepEqual(app.processCounts, { total: 1, enabled: 1, running: 0, stopped: 1, crashed: 0, failed: 0 });
   });
 
+suite('a PostgreSQL application named before its server is defined runs nothing until it is', async (t) => {
+  const app = await service.createApplication({ name: unique('pg-undefined'), kind: 'postgres' });
+  t.after(() => dispose(app.id));
+
+  assert.equal(app.postgres, null);
+  assert.deepEqual(app.processes, []);
+  assert.equal(app.status, 'stopped');
+  const { results } = await service.startApplication(app.id);
+  assert.deepEqual(results, []);
+  await assert.rejects(service.listDatabases(app.id), (err) => {
+    assert.equal(err.name, 'ValidationError');
+    assert.match(err.message, /not defined yet/);
+    return true;
+  });
+
+  const defined = await service.updateApplication(app.id, { postgres: { dataDirectory: await fakeCluster() } });
+  assert.equal(defined.postgres.port, 5432);
+  assert.equal(defined.processes.length, 1);
+  assert.equal(defined.processes[0].id, 'postgres');
+  assert.equal(defined.processes[0].configChangedWhileRunning, undefined);
+});
+
 suite('the database tools refuse an application that is not a PostgreSQL one', async (t) => {
   const app = await createApp([]);
   t.after(() => dispose(app.id));

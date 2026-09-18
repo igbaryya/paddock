@@ -24,11 +24,16 @@ import { read, update } from './json-db.js';
 /**
  * @typedef {{id: string, name: string, description: string, autoStart: boolean,
  *            kind: 'processes'|'postgres', postgres: PostgresConfig|null,
- *            processes: ProcessConfig[], createdAt: string, updatedAt: string}} ApplicationConfig
+ *            processes: ProcessConfig[], layout: Record<string, {x: number, y: number}>,
+ *            createdAt: string, updatedAt: string}} ApplicationConfig
  *   `autoStart` may be absent on an application stored before it existed; absent means false.
+ *   `layout` is where the dashboard's canvas left each card, keyed by node id, and may be absent on
+ *   an application stored before it existed; absent means "nothing placed yet".
  *   A `processes` application is configured process by process. A `postgres` application is one
  *   PostgreSQL server described by `postgres`, and its `processes` stays empty: the server is run by
- *   pg_ctl and outlives Paddock, so there is no process of Paddock's to store.
+ *   pg_ctl and outlives Paddock, so there is no process of Paddock's to store. Its `postgres` is null
+ *   from the moment it is named until the server is defined, the way a new `processes` application
+ *   has no processes until they are added.
  */
 
 /** Bad input from a user or an agent — the HTTP layer turns this into a 400. */
@@ -57,6 +62,11 @@ const DEFAULT_POSTGRES_PORT = 5432;
 const DEFAULT_MAINTENANCE_DATABASE = 'postgres';
 /** PostgreSQL truncates longer identifiers silently, so a longer role or database never matches. */
 const MAX_IDENTIFIER_LENGTH = 63;
+/** A layout holds one position per card, so it is bounded by the cards an application can have. */
+const MAX_LAYOUT_NODES = 200;
+/** Canvas coordinates, not screen pixels: roomy, and bounded so no client can place a card where
+ * no viewport will ever reach it. */
+const MAX_LAYOUT_COORDINATE = 100_000;
 /** The control binary a bin directory must hold, under either platform's spelling. */
 const PG_CTL_EXECUTABLES = ['pg_ctl', 'pg_ctl.exe'];
 /** Exported for `workspace.js`: a variable it reads out of a .env and this module would then refuse
@@ -185,6 +195,64 @@ const assertAutoStart = (value) => {
     throw new ValidationError(`autoStart must be true or false, received ${describe(value)}`);
   }
   return value;
+};
+
+/**
+ * Rounded, because a card lands on a whole coordinate and half a pixel of drag is not worth
+ * storing — and bounded, because a position is the one field a client writes on every gesture.
+ * @param {string} nodeId @param {'x'|'y'} axis
+ */
+const assertCoordinate = (nodeId, axis, value) => {
+  if (!Number.isFinite(value)) {
+    throw new ValidationError(
+      `layout ${axis} for ${quote(nodeId)} must be a finite number, received ${describe(value)}`
+    );
+  }
+  const rounded = Math.round(value);
+  if (Math.abs(rounded) > MAX_LAYOUT_COORDINATE) {
+    throw new ValidationError(
+      `layout ${axis} for ${quote(nodeId)} must be within ±${MAX_LAYOUT_COORDINATE}, received ${rounded}`
+    );
+  }
+  return rounded;
+};
+
+const assertPosition = (nodeId, position) => {
+  assertObject(position, `layout position for ${quote(nodeId)}`);
+  return {
+    x: assertCoordinate(nodeId, 'x', position.x),
+    y: assertCoordinate(nodeId, 'y', position.y),
+  };
+};
+
+/**
+ * Where the dashboard's canvas left each card, keyed by node id — a process id, or one of the
+ * canvas's own reserved ids. Presentation and nothing else: no field in here is ever read by
+ * anything that starts a process, which is why the ids are not checked against the process list.
+ * A card the application no longer has simply stops being sent.
+ * @returns {Record<string, {x: number, y: number}>}
+ */
+const assertLayout = (value) => {
+  if (value === undefined || value === null) return {};
+  assertObject(value, 'layout');
+  const entries = Object.entries(value);
+  if (entries.length > MAX_LAYOUT_NODES) {
+    throw new ValidationError(
+      `layout must hold at most ${MAX_LAYOUT_NODES} positions, received ${entries.length}`
+    );
+  }
+  // fromEntries rather than assignment, as in normaliseEnv: a node literally called __proto__ would
+  // otherwise hit the prototype setter and be dropped in silence.
+  return Object.fromEntries(
+    entries.map(([nodeId, position]) => {
+      if (nodeId.length > MAX_NAME_LENGTH) {
+        throw new ValidationError(
+          `layout node id ${quote(nodeId)} must be at most ${MAX_NAME_LENGTH} characters`
+        );
+      }
+      return [nodeId, assertPosition(nodeId, position)];
+    })
+  );
 };
 
 /**
@@ -410,12 +478,14 @@ const applyPostgresPatch = (current, patch) => {
   return next;
 };
 
-/** Settings belong to exactly one kind; accepting them on the other would store what nothing reads. */
+/**
+ * Settings belong to exactly one kind; accepting them on the other would store what nothing reads.
+ * A PostgreSQL application may be created without them and have its server defined afterwards.
+ */
 const buildKindFields = (kind, postgres) => {
-  if (kind === 'postgres') return { kind, postgres: buildPostgresFields(postgres) };
-  if (postgres !== undefined && postgres !== null) {
-    throw new ValidationError("postgres settings are only accepted with kind 'postgres'");
-  }
+  const sent = postgres !== undefined && postgres !== null;
+  if (kind === 'postgres') return { kind, postgres: sent ? buildPostgresFields(postgres) : null };
+  if (sent) throw new ValidationError("postgres settings are only accepted with kind 'postgres'");
   return { kind, postgres: null };
 };
 
@@ -425,7 +495,7 @@ const buildKindFields = (kind, postgres) => {
  * @param {string} [excludeId] the application being edited
  */
 const assertUniqueDataDirectory = (application, siblings, excludeId) => {
-  if (application.kind !== 'postgres') return;
+  if (application.kind !== 'postgres' || !application.postgres) return;
   const { dataDirectory } = application.postgres;
   const clash = siblings.find(
     (s) => s.id !== excludeId && s.kind === 'postgres' && s.postgres?.dataDirectory === dataDirectory
@@ -535,6 +605,8 @@ export async function createApplication(input = {}) {
     autoStart: assertAutoStart(autoStart),
     ...buildKindFields(assertKind(kind), postgres),
     processes: [],
+    // Nothing is placed until the canvas is opened; until then it arranges the cards itself.
+    layout: {},
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -548,7 +620,9 @@ export async function createApplication(input = {}) {
 
 /**
  * A patch may change a PostgreSQL application's settings, never an application's kind: a kind change
- * would strand the runtime state and logs of processes the new kind does not have.
+ * would strand the runtime state and logs of processes the new kind does not have. The first
+ * settings an application receives define its server, so they are held to the create rules — a
+ * data directory is required — rather than patched onto nothing.
  * @param {object} application the stored application
  * @param {object} patch
  * @returns {object|null} the postgres settings the updated application carries
@@ -563,6 +637,7 @@ const applyKindPatch = (application, patch) => {
   if (application.kind !== 'postgres') {
     throw new ValidationError("postgres settings are only accepted with kind 'postgres'");
   }
+  if (!application.postgres) return buildPostgresFields(patch.postgres);
   return applyPostgresPatch(application.postgres, patch.postgres);
 };
 
@@ -586,6 +661,26 @@ export async function updateApplication(applicationId, patch = {}) {
     return withApplication(doc, updated);
   });
   return structuredClone(updated);
+}
+
+/**
+ * Move the application's canvas cards. Its own entry point rather than a key on the update patch:
+ * this is the one field a client rewrites on every gesture, and it is presentation — so it leaves
+ * `updatedAt`, which says when what the application *runs* last changed, alone.
+ *
+ * The whole layout is replaced, never merged: the canvas sends the positions of the cards it is
+ * showing, and a card missing from that map is a card the application no longer has.
+ * @param {string} applicationId
+ * @param {Record<string, {x: number, y: number}>} layout
+ * @returns {Promise<Record<string, {x: number, y: number}>>} the stored layout
+ */
+export async function setLayout(applicationId, layout) {
+  const next = assertLayout(layout);
+  await update((doc) => {
+    const application = requireApplication(doc, applicationId);
+    return withApplication(doc, { ...application, layout: next });
+  });
+  return structuredClone(next);
 }
 
 /**

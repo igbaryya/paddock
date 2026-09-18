@@ -8,6 +8,7 @@
  */
 import { useState } from 'react';
 import Field from './Field.jsx';
+import Icon from './Icon.jsx';
 import DirectoryPicker from './DirectoryPicker.jsx';
 import { pickDirectory } from '../api.js';
 
@@ -52,11 +53,12 @@ export default function PathField({ label, value, onChange, error, hint, placeho
         action={
           <button
             type="button"
-            className="btn small"
+            className="btn"
             aria-expanded={browsing}
             disabled={picking}
             onClick={browse}
           >
+            <Icon name="folder" />
             {picking ? 'Choosing…' : 'Browse…'}
           </button>
         }

@@ -13,6 +13,9 @@ import { useState } from 'react';
 import Modal from './Modal.jsx';
 import Field, { nameError } from './Field.jsx';
 import PathField, { isAbsolute } from './PathField.jsx';
+import Icon from './Icon.jsx';
+import IconButton from './IconButton.jsx';
+import Switch from './Switch.jsx';
 import { useInspection } from '../useInspection.js';
 
 const MAX_COMMAND = 2_000;
@@ -143,8 +146,8 @@ function EnvRows({ rows, onChange, error, children }) {
     onChange(rows.map((row) => (row.id === id ? { ...row, [field]: value } : row)));
 
   return (
-    <fieldset className="field env">
-      <legend>Environment</legend>
+    <fieldset className="form-section env">
+      <legend className="form-section-title">Environment</legend>
       <p className="hint">Merged over the manager's own environment when the command is spawned.</p>
       {children}
       {rows.map((row) => (
@@ -165,21 +168,20 @@ function EnvRows({ rows, onChange, error, children }) {
             aria-label={`Value for ${row.key || 'the new variable'}`}
             onChange={(event) => patch(row.id, 'value', event.target.value)}
           />
-          <button
-            type="button"
-            className="btn small ghost"
-            aria-label={`Remove ${row.key || 'empty variable'}`}
+          <IconButton
+            icon="close"
+            label={`Remove ${row.key || 'empty variable'}`}
+            className="small ghost"
             onClick={() => onChange(rows.filter((other) => other.id !== row.id))}
-          >
-            Remove
-          </button>
+          />
         </div>
       ))}
       <button
         type="button"
-        className="btn small"
+        className="btn small env-add"
         onClick={() => onChange([...rows, envRow()])}
       >
+        <Icon name="plus" />
         Add variable
       </button>
       {error && (
@@ -283,49 +285,58 @@ export default function ProcessForm({ process, onSubmit, onClose }) {
   return (
     <Modal title={process ? `Edit ${process.name}` : 'Add process'} onClose={onClose}>
       <form onSubmit={submit} noValidate>
-        <Field label="Name" value={name} onChange={setName} error={errors.name} />
-        <PathField
-          label="Repository path"
-          value={repositoryPath}
-          onChange={setRepositoryPath}
-          error={errors.repositoryPath}
-          placeholder="/path/to/project"
-          hint="Absolute path to the checkout. The command runs here unless you set a working directory."
-          start=""
-        />
-        <div className="field-group">
-          <Field
-            label="Command"
-            value={command}
-            onChange={setCommand}
-            rows={2}
-            error={errors.command}
-            placeholder="npm run dev"
-            hint="Run through your shell, so pipes, && and env prefixes all work."
-            mono
-          />
-          <ScriptSuggestions loading={loading} inspection={inspection} onPick={setCommand} />
+        <div className="form-section">
+          <Field label="Name" value={name} onChange={setName} error={errors.name} />
+          <div className="switch-row">
+            <div className="row-text">
+              <span className="row-title">Enabled</span>
+              <span className="row-sub">Disabled processes are skipped when the application starts.</span>
+            </div>
+            <Switch checked={enabled} label="Enabled" onChange={setEnabled} />
+          </div>
         </div>
-        <PathField
-          label="Working directory"
-          value={workingDirectory}
-          onChange={setWorkingDirectory}
-          error={errors.workingDirectory}
-          hint="Optional. Must be inside the repository path."
-          start={repositoryPath.trim()}
-        />
+
+        <div className="form-section">
+          <h3 className="form-section-title">Where it runs</h3>
+          <PathField
+            label="Repository path"
+            value={repositoryPath}
+            onChange={setRepositoryPath}
+            error={errors.repositoryPath}
+            placeholder="/path/to/project"
+            hint="Absolute path to the checkout. The command runs here unless you set a working directory."
+            start=""
+          />
+          <PathField
+            label="Working directory"
+            value={workingDirectory}
+            onChange={setWorkingDirectory}
+            error={errors.workingDirectory}
+            hint="Optional. Must be inside the repository path."
+            start={repositoryPath.trim()}
+          />
+        </div>
+
+        <div className="form-section">
+          <h3 className="form-section-title">What it runs</h3>
+          <div className="field-group">
+            <Field
+              label="Command"
+              value={command}
+              onChange={setCommand}
+              rows={2}
+              error={errors.command}
+              placeholder="npm run dev"
+              hint="Run through your shell, so pipes, && and env prefixes all work."
+              mono
+            />
+            <ScriptSuggestions loading={loading} inspection={inspection} onPick={setCommand} />
+          </div>
+        </div>
+
         <EnvRows rows={rows} onChange={setRows} error={errors.env}>
           <EnvFiles files={inspection?.envFiles} notice={envNotice} onLoad={loadEnvFile} />
         </EnvRows>
-
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(event) => setEnabled(event.target.checked)}
-          />
-          Enabled &mdash; disabled processes are skipped when the application starts
-        </label>
 
         {serverError && (
           <p className="form-error" role="alert">

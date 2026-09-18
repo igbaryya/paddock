@@ -134,6 +134,19 @@ async function observe(rec, server) {
 // --- pg_ctl --------------------------------------------------------------------------------
 
 /**
+ * Locale pg_ctl (and the postmaster it starts) run under. A Paddock started at login has none —
+ * launchd does not set LANG — and on macOS `setlocale("")` then pulls in CoreFoundation, which
+ * threads the postmaster before it can fork: FATAL "postmaster became multithreaded during startup",
+ * with PostgreSQL's own hint to set LC_ALL. A locale already in the environment is left alone.
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {NodeJS.ProcessEnv}
+ */
+export function pgCtlEnv(env = process.env) {
+  if (['LC_ALL', 'LANG', 'LC_CTYPE'].some((key) => env[key]?.trim())) return env;
+  return { ...env, LC_ALL: 'C' };
+}
+
+/**
  * Run pg_ctl without a shell, and resolve either way: a start that fails is an outcome to report,
  * not an exception. pg_ctl redirects the server's own output to the log file, so the pipes close
  * when pg_ctl exits even though the server lives on.
@@ -141,7 +154,7 @@ async function observe(rec, server) {
  * @returns {Promise<{ok: boolean, output: string, error: Error|null}>}
  */
 const runPgCtl = (pgCtl, args) => new Promise((resolve) => {
-  execFile(pgCtl, args, { timeout: PG_CTL_TIMEOUT_MS, encoding: 'utf8' }, (error, stdout, stderr) => {
+  execFile(pgCtl, args, { timeout: PG_CTL_TIMEOUT_MS, encoding: 'utf8', env: pgCtlEnv() }, (error, stdout, stderr) => {
     resolve({ ok: !error, output: `${stdout ?? ''}${stderr ?? ''}`.trim(), error });
   });
 });

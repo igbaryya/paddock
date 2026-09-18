@@ -9,6 +9,14 @@
 import { useMemo, useState } from 'react';
 import PortsTable from '../components/PortsTable.jsx';
 import Icon from '../components/Icon.jsx';
+import Stat from '../components/Stat.jsx';
+import Toolbar from '../components/Toolbar.jsx';
+
+const FILTERS = [
+  ['all', 'All'],
+  ['managed', 'Managed'],
+  ['exposed', 'Exposed'],
+];
 
 /**
  * @param {{ports: object, isBusy: (port: number) => boolean, onRefresh: Function,
@@ -44,43 +52,34 @@ export default function PortsPage({ ports, isBusy, onRefresh, onStopPort, onProc
 
   const managed = (rows ?? []).filter((p) => p.owner.kind === 'managed').length;
   const exposed = (rows ?? []).filter((p) => p.exposed).length;
+  const count = (value) => (rows === null ? '—' : value);
 
   return (
     <>
-      <header className="page-head">
-        <div>
-          <h1>Local ports</h1>
-          <p className="page-sub">
-            What is listening on this machine, and which of it belongs to an application here.
-          </p>
-        </div>
+      <Toolbar
+        title="Local ports"
+        subtitle="What is listening on this machine, and which of it belongs to an application here."
+      >
         <button type="button" className="btn" onClick={onRefresh}>
           <Icon name="refresh" />
           Refresh
         </button>
-      </header>
+      </Toolbar>
 
       <div className="stat-row">
-        <div className="stat">
-          <span className="stat-value">{rows === null ? '—' : rows.length}</span>
-          <span className="stat-label">listening</span>
-        </div>
-        <div className="stat">
-          <span className="stat-value stat-ok">{rows === null ? '—' : managed}</span>
-          <span className="stat-label">managed here</span>
-        </div>
-        <div className="stat">
-          <span className={`stat-value${exposed ? ' stat-warn' : ''}`}>
-            {rows === null ? '—' : exposed}
-          </span>
-          <span className="stat-label">reachable off-machine</span>
-        </div>
-        <div className="stat">
-          <span className="stat-value stat-time">
-            {ports.scannedAt ? new Date(ports.scannedAt).toLocaleTimeString() : '—'}
-          </span>
-          <span className="stat-label">last scan</span>
-        </div>
+        <Stat icon="ports" value={count(rows?.length)} label="listening" />
+        <Stat icon="check" value={count(managed)} label="managed here" tone="ok" />
+        <Stat
+          icon="globe"
+          value={count(exposed)}
+          label="reachable off-machine"
+          tone={exposed ? 'warn' : undefined}
+        />
+        <Stat
+          icon="clock"
+          value={ports.scannedAt ? new Date(ports.scannedAt).toLocaleTimeString() : '—'}
+          label="last scan"
+        />
       </div>
 
       {ports.degraded?.map((note) => (
@@ -90,25 +89,21 @@ export default function PortsPage({ ports, isBusy, onRefresh, onStopPort, onProc
         </p>
       ))}
 
-      <section className="panel">
-        <div className="toolbar">
+      <section className="panel ports">
+        <div className="panel-head">
           <div className="search-wrap">
             <Icon name="search" size={14} className="search-icon" />
             <input
               type="search"
               className="search"
-              placeholder="Filter by port, pid, process or command…"
+              placeholder="Filter by port, pid, process or command"
               aria-label="Filter ports"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
           <div className="segmented" role="group" aria-label="Show">
-            {[
-              ['all', 'All'],
-              ['managed', 'Managed'],
-              ['exposed', 'Exposed'],
-            ].map(([value, label]) => (
+            {FILTERS.map(([value, label]) => (
               <button
                 key={value}
                 type="button"

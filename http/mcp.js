@@ -30,7 +30,8 @@ const INSTRUCTIONS =
   '"processes"), or a local PostgreSQL server run from its data directory as a single process ' +
   'named "postgres" (kind "postgres"), started and stopped with pg_ctl. That server is not a child ' +
   'of this manager: it keeps running when the manager stops, and its status is read from its data ' +
-  'directory, so it can read "running" because it was started from a terminal. Flow: ' +
+  'directory, so it can read "running" because it was started from a terminal. A PostgreSQL ' +
+  'application whose server the developer has not defined yet has postgres: null and no processes. Flow: ' +
   'list_applications for ids, kinds and current status, ' +
   'get_application for detail, start/stop/restart at either the application or the ' +
   'single-process level, read_logs for output — pass the next_seq you got back as since_seq to ' +

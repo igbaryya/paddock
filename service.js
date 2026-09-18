@@ -39,12 +39,18 @@ const spawnConfig = (applicationId, proc) => ({
 
 const isPostgres = (config) => config.kind === 'postgres';
 
+/** A PostgreSQL application is named before its server is defined, and runs nothing until it is. */
+const hasServer = (config) => isPostgres(config) && Boolean(config.postgres);
+
 /**
  * What an application runs. A PostgreSQL application's one server is derived from its settings on
  * every read, so views, logs and ports treat it exactly like a configured process.
  * @param {object} config an ApplicationConfig
  */
-const processesOf = (config) => (isPostgres(config) ? [cluster.serverProcess(config)] : config.processes);
+const processesOf = (config) => {
+  if (!isPostgres(config)) return config.processes;
+  return hasServer(config) ? [cluster.serverProcess(config)] : [];
+};
 
 /**
  * How an application's processes are run, behind one set of calls. A configured process is a child
@@ -63,7 +69,7 @@ const RUNTIMES = {
     forget: (config, proc) => manager.forget(config.id, proc.id),
   },
   postgres: {
-    refresh: (config) => lifecycle.refresh(cluster.serverOf(config)),
+    refresh: async (config) => (hasServer(config) ? lifecycle.refresh(cluster.serverOf(config)) : null),
     getState: (config) => lifecycle.getState(config.id),
     start: (config) => lifecycle.start(cluster.serverOf(config)),
     stop: (config) => lifecycle.stop(cluster.serverOf(config)),
@@ -175,8 +181,12 @@ const applicationView = (config) => {
     // An application stored before the field existed has none, and that means off.
     autoStart: config.autoStart === true,
     kind: config.kind,
-    postgres: isPostgres(config) ? postgresView(config.postgres) : null,
+    // Null for a PostgreSQL application too, until its server is defined.
+    postgres: hasServer(config) ? postgresView(config.postgres) : null,
     status: applicationStatus(processes),
+    // Where the dashboard's canvas left each card. Carried on the view so the canvas reads it from
+    // the same list it reads statuses from, rather than needing a request of its own.
+    layout: config.layout ?? {},
     createdAt: config.createdAt,
     updatedAt: config.updatedAt,
     processCounts: processCounts(processes),
@@ -290,10 +300,24 @@ function markServerChanged(view, patch) {
  * @param {{name?:string, description?:string, autoStart?:boolean, postgres?:object}} patch
  */
 export async function updateApplication(applicationId, patch) {
+  // A server being defined has no earlier settings to be running on, even when it is already up.
+  const defined = hasServer(await applications.getApplication(applicationId));
   await applications.updateApplication(applicationId, patch);
   const view = await viewOf(applicationId);
-  if (view.kind === 'postgres') markServerChanged(view, patch);
+  if (defined) markServerChanged(view, patch);
   return view;
+}
+
+/**
+ * Where the canvas leaves an application's cards. It answers with the layout alone rather than with
+ * an application view: the caller is the canvas that just moved the card and already has the view,
+ * and building a new one would refresh every runtime — for a PostgreSQL application, a `pg_ctl
+ * status` per drag.
+ * @param {string} applicationId
+ * @param {Record<string, {x: number, y: number}>} layout
+ */
+export async function setApplicationLayout(applicationId, layout) {
+  return { layout: await applications.setLayout(applicationId, layout) };
 }
 
 /**
@@ -686,6 +710,11 @@ async function connectionFor(applicationId) {
       `application '${config.name}' (${config.id}) is not a PostgreSQL application — it has no databases`
     );
   }
+  if (!hasServer(config)) {
+    throw new applications.ValidationError(
+      `the PostgreSQL server of '${config.name}' (${config.id}) is not defined yet — define it in the dashboard first`
+    );
+  }
   const state = await RUNTIMES.postgres.refresh(config);
   if (state.status !== 'running') {
     throw new applications.ValidationError(
@@ -792,13 +821,13 @@ export async function dropDatabase(applicationId, name) {
 }
 
 /**
- * Clusters on this machine for the new-application form, each marked with the application that
- * already runs it, if any — a data directory can belong to only one.
+ * Clusters on this machine for the PostgreSQL form, each marked with the application that already
+ * runs it, if any — a data directory can belong to only one.
  */
 export async function discoverClusters() {
   const [found, configs] = await Promise.all([discovery.discover(), applications.listApplications()]);
   const owners = new Map(
-    configs.filter(isPostgres).map((config) => [config.postgres.dataDirectory, config])
+    configs.filter(hasServer).map((config) => [config.postgres.dataDirectory, config])
   );
   const clusters = found.map((candidate) => {
     const owner = owners.get(candidate.dataDirectory);

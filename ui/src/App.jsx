@@ -8,11 +8,15 @@
 import { useCallback, useState } from 'react';
 import * as api from './api.js';
 import { useLiveState } from './useLiveState.js';
-import { navigate, paths, useRoute } from './router.jsx';
+import { useFavicons } from './useFavicons.js';
+import { Link, navigate, paths, useRoute } from './router.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import Icon from './components/Icon.jsx';
+import IconButton from './components/IconButton.jsx';
+import EmptyState from './components/EmptyState.jsx';
 import ApplicationForm from './components/ApplicationForm.jsx';
 import ProcessForm from './components/ProcessForm.jsx';
+import PostgresForm from './components/PostgresForm.jsx';
 import OverviewPage from './pages/OverviewPage.jsx';
 import ApplicationPage from './pages/ApplicationPage.jsx';
 import PortsPage from './pages/PortsPage.jsx';
@@ -41,6 +45,8 @@ export default function App() {
   const route = useRoute();
   const live = useLiveState(route.applicationId ?? null);
   const { applications, selected, logs, connection, reload, ports, refreshPorts } = live;
+  // Both the overview and an application's page show the icons, so they are fetched once, here.
+  const favicons = useFavicons(applications);
   const [dialog, setDialog] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [staleProcesses, setStaleProcesses] = useState([]);
@@ -134,9 +140,17 @@ export default function App() {
       : await api.createApplication(values);
     setDialog(null);
     await reload();
-    // A new application opens on its own page — it has no processes yet, and that is where they
-    // get added.
+    // A new application opens on its own page — it has no processes or server yet, and that is
+    // where they get added.
     if (!target && view?.id) navigate(paths.application(view.id));
+  };
+
+  /** A saved change can land under a running process, so the view's restart flags are kept first. */
+  const closeAfterSave = async (view) => {
+    const marked = markedProcessIds(view);
+    if (marked.length) setStaleProcesses((ids) => [...new Set([...ids, ...marked])]);
+    setDialog(null);
+    await reload();
   };
 
   const saveProcess = async (values) => {
@@ -144,10 +158,11 @@ export default function App() {
     const view = target
       ? await api.updateProcess(applicationId, target.id, values)
       : await api.addProcess(applicationId, values);
-    const marked = markedProcessIds(view);
-    if (marked.length) setStaleProcesses((ids) => [...new Set([...ids, ...marked])]);
-    setDialog(null);
-    await reload();
+    await closeAfterSave(view);
+  };
+
+  const savePostgres = async (postgres) => {
+    await closeAfterSave(await api.updateApplication(dialog.application.id, { postgres }));
   };
 
   const openApplicationForm = (application = null) => setDialog({ kind: 'application', application });
@@ -169,20 +184,10 @@ export default function App() {
       />
 
       <main className="main">
-        {banner && (
-          <p className="notice danger" role="alert">
-            <Icon name="alert" />
-            <span>{banner}</span>
-            <button type="button" className="btn ghost small" onClick={dismissBanner}>
-              <Icon name="close" />
-              <span className="sr-only">Dismiss</span>
-            </button>
-          </p>
-        )}
-
         {route.name === 'overview' && (
           <OverviewPage
             applications={applications}
+            favicons={favicons}
             ports={ports}
             busy={busy}
             onCreate={() => openApplicationForm()}
@@ -193,6 +198,7 @@ export default function App() {
         {route.name === 'application' && (
           <ApplicationPage
             application={selected}
+            favicons={favicons}
             /* The list having arrived is what turns "still loading" into "no such application". */
             loaded={applications.length > 0}
             logs={logs}
@@ -212,6 +218,7 @@ export default function App() {
               setDialog({ kind: 'process', applicationId: route.applicationId, process })
             }
             onDeleteProcess={(process) => deleteProcess(route.applicationId, process)}
+            onEditPostgres={() => setDialog({ kind: 'postgres', application: selected })}
           />
         )}
 
@@ -236,13 +243,25 @@ export default function App() {
         )}
 
         {route.name === 'not-found' && (
-          <div className="empty">
-            <h2>Page not found</h2>
-            <p>That address does not match anything in this dashboard.</p>
-            <a href={paths.overview()} className="btn primary">Back to applications</a>
-          </div>
+          <EmptyState
+            icon="alert"
+            title="Page not found"
+            action={<Link to={paths.overview()} className="btn primary">Back to applications</Link>}
+          >
+            That address does not match anything in this dashboard.
+          </EmptyState>
         )}
       </main>
+
+      {/* A notification rather than a banner: it floats over the page instead of pushing it down,
+          so a failed click never moves the control that is about to be clicked again. */}
+      {banner && (
+        <div className="toast" role="alert">
+          <Icon name="alert" />
+          <p>{banner}</p>
+          <IconButton icon="close" label="Dismiss" className="small ghost" onClick={dismissBanner} />
+        </div>
+      )}
 
       {dialog?.kind === 'application' && (
         <ApplicationForm
@@ -255,6 +274,13 @@ export default function App() {
         <ProcessForm
           process={dialog.process}
           onSubmit={saveProcess}
+          onClose={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === 'postgres' && (
+        <PostgresForm
+          settings={dialog.application.postgres}
+          onSubmit={savePostgres}
           onClose={() => setDialog(null)}
         />
       )}

@@ -1,6 +1,8 @@
 /**
- * Dialog shell for the configuration forms. Escape closes it, focus moves into it on open and back
- * to whatever opened it on close, so a keyboard user is never dropped at the top of the page.
+ * Dialog shell for the configuration forms, drawn as the OS draws a sheet: a slab of material over a
+ * dimmed window, its title pinned at the top and the form's buttons pinned at the bottom while the
+ * fields between them scroll. Escape closes it, focus moves into it on open and back to whatever
+ * opened it on close, so a keyboard user is never dropped at the top of the page.
  */
 import { useEffect, useId, useRef } from 'react';
 
@@ -38,7 +40,9 @@ export default function Modal({ title, onClose, children }) {
       }}
     >
       <div className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={dialogRef}>
-        <h2 id={titleId}>{title}</h2>
+        <header className="modal-head">
+          <h2 id={titleId}>{title}</h2>
+        </header>
         {children}
       </div>
     </div>

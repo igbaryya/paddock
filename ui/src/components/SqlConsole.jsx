@@ -12,6 +12,8 @@
 import { useEffect, useRef, useState } from 'react';
 import * as api from '../api.js';
 import Icon from './Icon.jsx';
+import IconButton from './IconButton.jsx';
+import Switch from './Switch.jsx';
 
 /** A text value this long is cut in its cell; the whole of it is on the cell's tooltip. */
 const MAX_CELL_CHARS = 200;
@@ -196,36 +198,33 @@ export default function SqlConsole({ application }) {
 
   return (
     <section className="panel sql-console" aria-label="SQL console">
-      <div className="sql-bar">
-        <Icon name="database" className="log-mark" />
-        <label className="log-filter">
-          Database
-          <select
-            value={selected}
-            disabled={!databases?.length}
-            onChange={(event) => setDatabase(event.target.value)}
-          >
-            {names.map((name) => (
-              <option key={name} value={name}>{name}</option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="btn small ghost" disabled={!running} onClick={reload}>
-          <Icon name="refresh" />
-          <span className="sr-only">Reload databases</span>
-        </button>
-        <label className="checkbox sql-writes">
-          <input
-            type="checkbox"
-            checked={allowWrites}
-            onChange={(event) => setAllowWrites(event.target.checked)}
-          />
-          Allow writes
-        </label>
+      <div className="panel-head">
+        <h2 className="panel-title">
+          <Icon name="database" />
+          SQL
+        </h2>
+        <select
+          className="select"
+          aria-label="Database"
+          value={selected}
+          disabled={!databases?.length}
+          onChange={(event) => setDatabase(event.target.value)}
+        >
+          {names.map((name) => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+        <IconButton
+          icon="refresh"
+          label="Reload databases"
+          className="small ghost"
+          disabled={!running}
+          onClick={reload}
+        />
         <span className="spacer" />
-        <span className="meta">
-          {allowWrites ? 'Committed as it runs' : 'Read-only, one statement'} · ⌘/Ctrl+Enter
-        </span>
+        <Switch checked={allowWrites} label="Allow writes" onChange={setAllowWrites}>
+          Allow writes
+        </Switch>
         <button
           type="button"
           className={`btn small ${allowWrites ? 'danger' : 'primary'}`}
@@ -238,7 +237,7 @@ export default function SqlConsole({ application }) {
       </div>
 
       {!running && (
-        <p className="empty-inline">The server is {application.status}. Start it to run queries.</p>
+        <p className="panel-note">The server is {application.status}. Start it to run queries.</p>
       )}
       {listError && <p className="notice danger">{listError}</p>}
 
@@ -253,6 +252,10 @@ export default function SqlConsole({ application }) {
         aria-label="SQL"
         rows={8}
       />
+      <p className="panel-foot meta">
+        {allowWrites ? 'Writes are committed as they run.' : 'Read-only, one statement at a time.'}{' '}
+        ⌘/Ctrl+Enter runs the selection, or everything when nothing is selected.
+      </p>
 
       {outcome?.error && <SqlError error={outcome.error} statement={outcome.statement} />}
       {outcome?.result && <ResultGrid result={outcome.result} />}

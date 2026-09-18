@@ -11,7 +11,7 @@ watch every process, and let an AI agent drive it over MCP.
 
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.6-5b9cff)](https://nodejs.org)
 [![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-3ecf8e)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/tests-317%20passing-3ecf8e)](#testing)
+[![Tests](https://img.shields.io/badge/tests-322%20passing-3ecf8e)](#testing)
 [![License](https://img.shields.io/badge/license-MIT-8b94a7)](LICENSE)
 
 <img src="docs/overview.png" alt="The Paddock overview: each application as a card with its processes and the ports they hold">
@@ -67,6 +67,114 @@ naming anything that did not start.
 Then: **New application** → **Add process** → point it at a repository, give it `npm run dev` →
 **Start**.
 
+## Desktop app
+
+Installers: [igbaryya.github.io/paddock](https://igbaryya.github.io/paddock/). The page lists every
+**published** GitHub release (drafts stay off it). macOS Apple silicon, macOS Intel, and Windows.
+
+The same server and dashboard, packaged as an app for macOS and Windows: a window, and a tray icon
+(the menu bar on macOS) that outlives it.
+
+```bash
+npm run desktop:setup   # Electron and electron-builder, into desktop/
+npm run desktop         # run it from this checkout
+npm run desktop:dist    # build the UI, then the installers into desktop/dist/
+```
+
+`desktop:dist` builds for the OS it runs on: a `.dmg` and a `.zip` for each architecture on macOS, or
+one NSIS installer covering x64 and arm64 on Windows. The server has no native modules, so a Mac can
+also build the Windows installer, with `npm --prefix desktop run dist:win`. Signing it there needs a
+certificate file rather than a Windows certificate store.
+
+**What the app does, and what it leaves to the server.** The app runs the unmodified `server.js` in
+an Electron utility process and shows its dashboard from `http://127.0.0.1:4599`. The MCP URL is the
+same, so agents configured for a checkout keep working. The installed app carries its own copy of the
+server: the source files, the built UI and the production `node_modules`, stored as plain files
+outside the app's asar archive.
+
+- **A splash screen covers the start.** While the app brings up its own server, a splash screen
+  shows. It closes once the dashboard has painted, or gives way to a dialog if the start fails. When
+  the app uses a Paddock that is already running, the dashboard opens straight away. A login opens to
+  the tray and shows neither.
+- **Closing the window stops nothing.** Dev servers keep running and agents keep reaching `/mcp`. The
+  tray reopens the window, copies the MCP URL, and quits.
+- **Quitting stops what the app started.** The app asks its server to shut down, which is the same
+  graceful stop Ctrl-C runs. The app waits for it, and kills the server only after the server's own
+  shutdown ceiling has passed.
+- **A Paddock already on the port is used, not replaced.** Before starting a server, the app asks
+  `/api/health`. If a Paddock answers — a checkout's login agent, or an `npm start` — the window shows
+  that one, and quitting the app leaves it running. If anything else holds the port, the app says so
+  and exits.
+- **Start at login** registers the app itself: a Login Item on macOS, a `Run` value on Windows. A
+  login opens the app to the tray without a window. When the app runs from a checkout, the switch is
+  unavailable.
+- **Settings.** The installed app reads `paddock.env` from its own folder,
+  `~/Library/Application Support/Paddock Desktop` or `%APPDATA%\Paddock Desktop`. Chromium keeps its
+  profile in the same folder, so none of it lands in the data directory. The server's output goes to
+  `logs/paddock.log` in the data directory.
+- **macOS folder access.** Dev servers are the app's children, so macOS asks *Paddock* for access to
+  Desktop, Documents and Downloads the first time one reads a repository there. A denial shows up as
+  a dev server failing with `EPERM`. Change it under System Settings → Privacy & Security → Files and
+  Folders.
+- **Updates** come from this repository's GitHub releases. The installed app checks at launch and
+  every four hours, and downloads an update in the background. The tray then offers **Install … and
+  Restart**, which stops the app's server — and so every service it supervises — before the installer
+  runs. An update that is downloaded but not installed is applied the next time the app quits. A
+  build running from a checkout never checks for updates.
+
+### Releasing
+
+```bash
+npm version patch          # or minor / major; the version and the tag come from the root package
+git push --follow-tags
+```
+
+The tag starts [.github/workflows/release.yml](.github/workflows/release.yml), which:
+
+1. Fails if the tag does not match the version in `package.json`.
+2. Creates one draft release for that tag.
+3. On macOS runs the test suite, then builds the `.dmg` and `.zip` files for both architectures.
+   On Windows it builds the NSIS installer.
+4. Uploads everything, including the `latest*.yml` files installed apps read, to the draft.
+
+Nothing reaches users until you publish the draft on GitHub. The download site then picks the
+release up from the public API — no extra workflow step.
+
+The site itself is `site/`, published by [.github/workflows/pages.yml](.github/workflows/pages.yml)
+to GitHub Pages. Preview locally with any static server on that folder. The first deploy needs
+**Settings → Pages → Source: GitHub Actions**.
+
+**Signing.** Unsigned builds work locally, but Gatekeeper and SmartScreen block them on anyone else's
+machine. On macOS, every rebuild also looks like a new app to the privacy prompts, and an unsigned app
+cannot install updates. Both local builds and the workflow read signing from the environment. The
+workflow warns, rather than fails, when signing is missing.
+
+| | Local environment | Workflow |
+| --- | --- | --- |
+| macOS signing | a *Developer ID Application* identity in the keychain, or `CSC_LINK` + `CSC_KEY_PASSWORD` | secrets `MAC_CERTIFICATE` (base64 `.p12`), `MAC_CERTIFICATE_PASSWORD` |
+| macOS notarisation | `APPLE_API_KEY` (path to the `.p8`) + `APPLE_API_KEY_ID` + `APPLE_API_ISSUER` | secrets `APPLE_API_KEY` (the `.p8` contents), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER` |
+| Windows signing (Azure Trusted Signing) | `AZURE_SIGNING_ENDPOINT`, `_ACCOUNT`, `_PROFILE`, `_PUBLISHER`, plus `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET` | the four `AZURE_SIGNING_*` as repository variables, the three credentials as secrets |
+
+Windows signing goes through Azure Trusted Signing because code-signing certificates are no longer
+issued as exportable files. A legacy `.pfx` still works locally through `WIN_CSC_LINK` +
+`WIN_CSC_KEY_PASSWORD`. `AZURE_SIGNING_PUBLISHER` must match the certificate's subject exactly: an
+installed app refuses any update whose signature names a different publisher.
+
+`CSC_IDENTITY_AUTO_DISCOVERY=false` forces an unsigned build on a Mac that has an identity. The
+Electron fuses that would turn a signed app into a general-purpose node binary (`RunAsNode`,
+`NODE_OPTIONS`, `--inspect`) are switched off, and the asar archive is integrity-checked.
+
+App icons are rendered from `ui/public/favicon.svg` and `desktop/icons/` by `npm --prefix desktop run
+icons`; the PNGs are committed. That one SVG is the source for every icon:
+
+- the browser tab and the sidebar;
+- the macOS icon, drawn inside Apple's margin with its own shadow;
+- the Windows icon, drawn edge to edge;
+- `desktop/assets/icon.png`, which the splash screen and the Windows and Linux window icons use.
+
+Run from a checkout, the app sets the macOS render as its Dock icon, which would otherwise be
+Electron's.
+
 ## The dashboard
 
 Four routes, all real URLs — a project page is worth pasting into a ticket, and survives a refresh.
@@ -101,8 +209,11 @@ leaves the ones you have overridden exactly as you typed them.
 ## PostgreSQL applications
 
 An application can be a local PostgreSQL server instead of a group of repositories: **New
-application** → **PostgreSQL**. The form starts by listing the clusters already on the machine, and
-picking one fills in the rest.
+application** → **PostgreSQL**, and give it a name — exactly as you would a group of processes. Its
+page then shows a **Define PostgreSQL** box, the way a new group shows an empty process list. The
+box opens the server form, which starts by listing the clusters already on the machine; picking one
+fills in the rest. Until the server is defined the application runs nothing, and the database tools
+refuse it with a message that says so.
 
 **Discovery** looks in two places, and never walks the disk:
 
@@ -141,8 +252,9 @@ into a session of its own; Stop runs `pg_ctl stop -m fast`. So:
   configured one when something else started it.
 
 The one process an application of this kind has, named `postgres`, is derived from the settings on
-every read and never stored, so it has no Edit or Delete of its own. A change to the data directory,
-port, bin directory or log file flags a running server for restart.
+every read and never stored. Its tile's Edit opens those settings, and it has no Delete. A change to
+the data directory, port, bin directory or log file flags a running server for restart. Defining the
+server for the first time does not, even if the cluster is already running.
 
 The log file is followed into the log viewer and `read_logs`, from the moment Paddock starts watching
 it: what the server logged while Paddock was down is in the file, not in the viewer. A start that
@@ -356,7 +468,7 @@ rather than silently skipping.
 | `PADDOCK_PORT_STOP_GRACE_MS` | `5000` |
 | `PADDOCK_PG_STATEMENT_TIMEOUT_MS` | `15000` — per statement from a database tool |
 | `PADDOCK_PG_CONNECT_TIMEOUT_MS` | `5000` |
-| `PADDOCK_ENV_FILE` | `.env` beside the server |
+| `PADDOCK_ENV_FILE` | `.env` beside the server; `paddock.env` in the desktop app's folder |
 
 Data lives in `%APPDATA%\paddock` on Windows, `~/Library/Application Support/paddock` on macOS, and
 `$XDG_DATA_HOME/paddock` (else `~/.local/share/paddock`) elsewhere. Nothing is written inside your
@@ -415,7 +527,7 @@ is still alive, so termination is always confirmed by polling.
 ## Testing
 
 ```bash
-npm test       # 318 tests on node:test — no test framework dependency
+npm test       # 323 tests on node:test — no test framework dependency
 npm run check  # syntax gate across every server source
 ```
 
@@ -459,6 +571,8 @@ from a terminal, and discovery. Without them those tests are skipped.
 - [platform/](platform/) — the only code that knows which OS it is on
 - [http/](http/) — REST routes, SSE, static serving, MCP tools
 - [ui/](ui/) — React + Vite dashboard
+- [desktop/](desktop/) — the Electron app: runs the server, shows the dashboard, keeps the tray,
+  registers the app for start at login, and installs updates
 
 The UI never implements process logic. It calls the same `service.js` the MCP tools call, so the
 dashboard and an agent can never disagree about what is running.

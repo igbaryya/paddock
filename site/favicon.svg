@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Same mark as ui/public/favicon.svg  keep them in step. -->
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232c3d"/>
+      <stop offset="1" stop-color="#0a0d13"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".28" cy=".22" r=".85">
+      <stop offset="0" stop-color="#4f8cff" stop-opacity=".38"/>
+      <stop offset="1" stop-color="#4f8cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a9c9ff"/>
+      <stop offset="1" stop-color="#3f73f2"/>
+    </linearGradient>
+    <radialGradient id="live" cx=".36" cy=".3" r=".75">
+      <stop offset="0" stop-color="#9af3c6"/>
+      <stop offset="1" stop-color="#1fb877"/>
+    </radialGradient>
+  </defs>
+  <rect width="32" height="32" rx="7.2" fill="url(#ground)"/>
+  <rect width="32" height="32" rx="7.2" fill="url(#glow)"/>
+  <rect x=".15" y=".15" width="31.7" height="31.7" rx="7.05" fill="none" stroke="#fff" stroke-opacity=".16" stroke-width=".3"/>
+  <path d="M7.8 23.7V7.9h5.6a5 5 0 0 1 0 10H7.8" fill="none" stroke="url(#glyph)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="23.9" cy="23.4" r="3.4" fill="#3ee89a" fill-opacity=".2"/>
+  <circle cx="23.9" cy="23.4" r="2.3" fill="url(#live)"/>
+</svg>

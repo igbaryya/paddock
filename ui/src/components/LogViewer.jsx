@@ -9,10 +9,59 @@ import Icon from './Icon.jsx';
 /** Browser scroll positions are fractional; a few pixels of slack is still "at the bottom". */
 const BOTTOM_SLACK_PX = 24;
 
+const STREAMS = [
+  ['all', 'All'],
+  ['stdout', 'stdout'],
+  ['stderr', 'stderr'],
+];
+
 const formatTime = (ts) => {
   const at = new Date(ts);
   return Number.isNaN(at.getTime()) ? '' : at.toTimeString().slice(0, 8);
 };
+
+/**
+ * Which process the tail shows. A tab list because it switches what the one viewport below shows.
+ * @param {{processes: object[], source: string, onChange: (processId: string) => void}} props
+ */
+function SourceTabs({ processes, source, onChange }) {
+  const tabs = [['all', 'All'], ...processes.map((process) => [process.id, process.name])];
+  return (
+    <div className="segmented log-tabs" role="tablist" aria-label="Log source">
+      {tabs.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={source === id}
+          className={`segment${source === id ? ' selected' : ''}`}
+          onClick={() => onChange(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** @param {{stream: string, onChange: (stream: string) => void}} props */
+function StreamFilter({ stream, onChange }) {
+  return (
+    <div className="segmented" role="group" aria-label="Stream">
+      {STREAMS.map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          className={`segment${stream === value ? ' selected' : ''}`}
+          aria-pressed={stream === value}
+          onClick={() => onChange(value)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 /**
  * @param {{application: object, logs: object[], onClear: () => void}} props
@@ -50,53 +99,27 @@ export default function LogViewer({ application, logs, onClear }) {
   };
 
   return (
-    <section className="logs" aria-label="Process output">
-      <div className="log-bar">
-        <Icon name="terminal" className="log-mark" />
-        <div className="tabs" role="tablist" aria-label="Log source">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={source === 'all'}
-            className={`tab${source === 'all' ? ' selected' : ''}`}
-            onClick={() => setProcessId('all')}
-          >
-            All
-          </button>
-          {application.processes.map((process) => (
-            <button
-              key={process.id}
-              type="button"
-              role="tab"
-              aria-selected={source === process.id}
-              className={`tab${source === process.id ? ' selected' : ''}`}
-              onClick={() => setProcessId(process.id)}
-            >
-              {process.name}
-            </button>
-          ))}
-        </div>
-
-        <label className="log-filter">
-          Stream
-          <select value={stream} onChange={(event) => setStream(event.target.value)}>
-            <option value="all">all</option>
-            <option value="stdout">stdout</option>
-            <option value="stderr">stderr</option>
-          </select>
-        </label>
-
-        <span className="meta">{visible.length} lines</span>
+    <section className="panel logs" aria-label="Process output">
+      <div className="panel-head">
+        <h2 className="panel-title">
+          <Icon name="terminal" />
+          Output
+        </h2>
+        <SourceTabs processes={application.processes} source={source} onChange={setProcessId} />
+        <span className="spacer" />
+        <StreamFilter stream={stream} onChange={setStream} />
+        <span className="meta">{visible.length.toLocaleString()} lines</span>
         <button
           type="button"
           className="btn small"
           disabled={following}
           onClick={() => setFollowing(true)}
         >
+          <Icon name="arrow-down" />
           {following ? 'Following' : 'Jump to latest'}
         </button>
         <button type="button" className="btn small ghost" onClick={onClear}>
-          Clear view
+          Clear
         </button>
       </div>
 
@@ -118,7 +141,7 @@ export default function LogViewer({ application, logs, onClear }) {
               {source === 'all' && (
                 <span className="log-source">{names.get(line.processId) ?? line.processId}</span>
               )}
-              <span className="log-message">{line.message || ' '}</span>
+              <span className="log-message">{line.message || ' '}</span>
             </div>
           ))
         )}

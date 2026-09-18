@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <meta
+      name="description"
+      content="Paddock — local dev manager with MCP. Start your stack, watch processes, and let an AI agent restart them and read the logs. Download for macOS and Windows."
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src https://api.github.com; font-src 'none'"
+    />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>Paddock — download</title>
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="#">
+        <img class="mark" src="favicon.svg" width="32" height="32" alt="" />
+        Paddock
+      </a>
+      <a class="btn ghost" href="https://github.com/igbaryya/paddock">GitHub</a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="kicker">Desktop app</p>
+        <h1>Where your local dev environment gets prepped, run up and watched.</h1>
+        <p class="lede">
+          Define an application from several repositories, start the whole thing with one click,
+          watch every process, and hand the same controls to an AI agent over
+          <a href="https://modelcontextprotocol.io">MCP</a>.
+        </p>
+        <div id="latest" class="latest">
+          <p class="muted">Loading releases…</p>
+        </div>
+      </section>
+
+      <section class="mcp" aria-labelledby="mcp-heading">
+        <h2 id="mcp-heading">MCP</h2>
+        <p class="muted">
+          Paddock owns configuration, process lifecycle, logs and ports. The agent brings the
+          intelligence — so “the backend died, restart it and tell me what the stack trace said”
+          stops being your job.
+        </p>
+        <div class="cards">
+          <article class="card">
+            <h3>Same controls as the dashboard</h3>
+            <p class="muted">
+              List applications, start and stop processes, read logs, inspect ports. The UI and the
+              agent call the same operations — they cannot disagree about what is running.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Streamable HTTP at <code>/mcp</code></h3>
+            <p class="muted">
+              Point Cursor or Claude at <code>http://127.0.0.1:4599/mcp</code>. The desktop app
+              serves the same URL as a checkout, so an agent already configured keeps working.
+            </p>
+          </article>
+          <article class="card">
+            <h3>It does not try to understand your code</h3>
+            <p class="muted">
+              You define the application, the repositories and the commands. Paddock runs them and
+              exposes the MCP surface. The agent decides what to do with a crash.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="platforms" aria-labelledby="platforms-heading">
+        <h2 id="platforms-heading">All platforms</h2>
+        <div id="platforms" class="cards"></div>
+      </section>
+
+      <section class="history" aria-labelledby="history-heading">
+        <h2 id="history-heading">Versions</h2>
+        <p class="muted">Published GitHub releases only. Drafts stay off this page until you publish them.</p>
+        <div id="history" class="panel"></div>
+      </section>
+    </main>
+
+    <footer>
+      <p>MIT · <a href="https://github.com/igbaryya/paddock">igbaryya/paddock</a></p>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

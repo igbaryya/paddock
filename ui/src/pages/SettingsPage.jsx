@@ -1,7 +1,11 @@
 /**
- * Settings for Paddock itself, as opposed to anything it runs: whether it starts when you log in,
- * which applications it starts when it does, and the facts about this copy that decide what the
- * login entry would start.
+ * Settings for Paddock itself, as opposed to anything it runs. Laid out the way the OS lays out its
+ * own settings — titled groups of rows, each row a label on the left and its control on the right.
+ *
+ * Startup is one group because it is one sequence: the login entry starts Paddock, and Paddock starts
+ * the chosen applications one after another. The facts about this copy — what the login entry would
+ * start, where the data lives — are for when something is wrong, so they fold away behind a one-line
+ * summary instead of being the bulk of the page.
  *
  * The login switch and the facts are fetched here: nothing changes them except this page, so there
  * is nothing to push. The applications are the shell's live list instead, because they change from
@@ -9,34 +13,81 @@
  */
 import { useEffect, useId, useState } from 'react';
 import * as api from '../api.js';
+import CopyButton from '../components/CopyButton.jsx';
 import Icon from '../components/Icon.jsx';
-import StatusDot from '../components/StatusDot.jsx';
+import Switch from '../components/Switch.jsx';
 import ThemeSwitcher from '../components/ThemeSwitcher.jsx';
+import Toolbar from '../components/Toolbar.jsx';
 import { useTheme } from '../useTheme.js';
+
+/**
+ * A titled group of rows, with the small print underneath it where the OS puts a group's footnote.
+ * @param {{title: string, note?: React.ReactNode, children: React.ReactNode}} props
+ */
+function SettingsGroup({ title, note, children }) {
+  const titleId = useId();
+  return (
+    <section className="settings-section" aria-labelledby={titleId}>
+      <h2 className="group-title" id={titleId}>{title}</h2>
+      <div className="group">{children}</div>
+      {note && <p className="group-note">{note}</p>}
+    </section>
+  );
+}
+
+/** @param {{children: React.ReactNode}} props a row that only says something */
+const TextRow = ({ children }) => (
+  <div className="group-row">
+    <span className="row-sub">{children}</span>
+  </div>
+);
+
+/** @param {{label: string, children: React.ReactNode}} props one fact, as a row of the group */
+const Fact = ({ label, children }) => (
+  <div className="fact">
+    <dt>{label}</dt>
+    <dd>{children}</dd>
+  </div>
+);
+
+/** @param {{label: string, value: string}} props a fact that is a path, whole, and copyable */
+const PathFact = ({ label, value }) => (
+  <Fact label={label}>
+    <code>{value}</code>
+    <CopyButton text={value} label={`Copy the ${label.toLowerCase()} path`} />
+  </Fact>
+);
+
+/** @param {{command: string}} props a command to paste into a terminal, drawn as one */
+const CommandWell = ({ command }) => (
+  <div className="command-well">
+    <code>{command}</code>
+    <CopyButton text={command} label="Copy the command" />
+  </div>
+);
 
 /**
  * The one setting that is not Paddock's: it lives in this browser, so it is saved the moment it is
  * picked and never goes through the manager.
  */
 function Appearance() {
-  const titleId = useId();
   const { preference, resolved } = useTheme();
 
   return (
-    <section className="panel settings-section" aria-labelledby={titleId}>
-      <div className="setting-row">
-        <div className="setting-text">
-          <h2 id={titleId}>Appearance</h2>
-          <p className="setting-state">
+    <SettingsGroup title="Appearance" note="Saved in this browser only.">
+      <div className="group-row">
+        <span className="row-icon"><Icon name={resolved === 'light' ? 'sun' : 'moon'} size={14} /></span>
+        <div className="row-text">
+          <span className="row-title">Theme</span>
+          <span className="row-sub">
             {preference === 'system'
               ? `Following your system, which is ${resolved} right now.`
               : `Always ${resolved}, whatever your system is set to.`}
-          </p>
-          <p className="hint">Saved in this browser only.</p>
+          </span>
         </div>
         <ThemeSwitcher />
       </div>
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -54,40 +105,21 @@ function stateOf(status) {
 }
 
 /**
- * The toggle, as a checkbox with the switch role: native keyboard and form behaviour, and a screen
- * reader announces on/off rather than checked/unchecked.
- * @param {{checked: boolean, disabled: boolean, label: string, onChange: (next: boolean) => void}} props
+ * The login switch, and under it whatever stands between the switch and it actually working.
+ * @param {{status: object, saving: boolean, onChange: (enabled: boolean) => void}} props
  */
-function Switch({ checked, disabled, label, onChange }) {
-  return (
-    <label className="switch">
-      <input
-        type="checkbox"
-        role="switch"
-        checked={checked}
-        disabled={disabled}
-        aria-label={label}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      <span className="switch-track" aria-hidden="true" />
-    </label>
-  );
-}
-
-/** @param {{status: object, saving: boolean, onChange: (enabled: boolean) => void}} props */
 function StartAtLogin({ status, saving, onChange }) {
-  const titleId = useId();
   const handOver = status.enabled && !status.launchedAtLogin && !status.problems.length;
 
   return (
-    <section className="panel settings-section" aria-labelledby={titleId}>
-      <div className="setting-row">
-        <div className="setting-text">
-          <h2 id={titleId}>Start at login</h2>
-          <p className="setting-state" role="status">
+    <>
+      <div className="group-row">
+        <span className="row-icon"><Icon name="power" size={14} /></span>
+        <div className="row-text">
+          <span className="row-title">Open Paddock when you log in</span>
+          <span className="row-sub" role="status">
             {saving ? 'Saving…' : stateOf(status)}
-          </p>
-          {status.note && <p className="hint">{status.note}</p>}
+          </span>
         </div>
         <Switch
           checked={status.enabled}
@@ -98,9 +130,9 @@ function StartAtLogin({ status, saving, onChange }) {
       </div>
 
       {status.problems.length > 0 && (
-        <div className="notice warn">
+        <div className="group-row row-warn">
           <Icon name="alert" />
-          <span>{status.problems.join(' ')}</span>
+          <span className="row-text row-sub">{status.problems.join(' ')}</span>
           <button type="button" className="btn small" disabled={saving} onClick={() => onChange(true)}>
             Point it at this copy
           </button>
@@ -108,108 +140,138 @@ function StartAtLogin({ status, saving, onChange }) {
       )}
 
       {handOver && status.startNowCommand && (
-        <p className="setting-hint">
-          To switch over without logging out, stop this copy (that stops the services it runs), then
-          run <code>{status.startNowCommand}</code>
-        </p>
+        <div className="group-row row-detail">
+          <p className="row-sub">
+            To switch over without logging out, stop this copy — that stops the services it runs —
+            then run:
+          </p>
+          <CommandWell command={status.startNowCommand} />
+        </div>
       )}
-
-      {status.supported && (
-        <dl className="process-facts settings-facts">
-          <dt>entry</dt>
-          <dd><code>{status.location}</code></dd>
-          {status.runs && (
-            <>
-              <dt>runs</dt>
-              <dd>
-                <code className="cmd">{[status.runs.program, ...status.runs.args].join(' ')}</code>
-              </dd>
-            </>
-          )}
-          <dt>log</dt>
-          <dd><code>{status.logFile}</code></dd>
-        </dl>
-      )}
-    </section>
+    </>
   );
 }
 
 /** An application whose processes are all disabled would be "started" into doing nothing. */
 const processesLabel = ({ enabled }) =>
-  enabled === 0 ? 'no enabled processes' : `${enabled} enabled process${enabled === 1 ? '' : 'es'}`;
+  enabled === 0 ? 'No enabled processes' : `${enabled} enabled process${enabled === 1 ? '' : 'es'}`;
+
+/** Each chosen application's place in the start sequence, which is the order of the list. */
+const startPositions = (applications) =>
+  new Map(applications.filter((application) => application.autoStart).map(({ id }, i) => [id, i + 1]));
 
 /**
- * @param {{applications: object[], startAtLogin: object|null, isBusy: (id: string) => boolean,
+ * @param {{applications: object[], isBusy: (id: string) => boolean,
  *          onChange: (applicationId: string, autoStart: boolean) => void}} props
  */
-function AutoStartApplications({ applications, startAtLogin, isBusy, onChange }) {
-  const titleId = useId();
-  const chosen = applications.filter((application) => application.autoStart).length;
+function AutoStartRows({ applications, isBusy, onChange }) {
+  if (applications.length === 0) return <TextRow>No applications yet.</TextRow>;
 
-  return (
-    <section className="panel settings-section" aria-labelledby={titleId}>
-      <div className="setting-text">
-        <h2 id={titleId}>Start applications with Paddock</h2>
-        <p className="setting-state">
-          {chosen === 0
-            ? 'None. Paddock starts with nothing running.'
-            : `${chosen} of ${applications.length} start as soon as Paddock does.`}
-        </p>
-        <p className="hint">
-          One after another, in this order, each with its enabled processes only — whether Paddock
-          was started at login or by hand.
-        </p>
+  const positions = startPositions(applications);
+  return applications.map((application) => (
+    <div key={application.id} className="group-row">
+      <span className={`row-order${positions.has(application.id) ? ' chosen' : ''}`}>
+        {positions.get(application.id) ?? <span aria-hidden="true">–</span>}
+      </span>
+      <div className="row-text">
+        <span className="row-title">{application.name}</span>
+        <span className="row-sub">{processesLabel(application.processCounts)}</span>
       </div>
+      <Switch
+        checked={application.autoStart}
+        disabled={isBusy(application.id)}
+        label={`Start ${application.name} with Paddock`}
+        onChange={(next) => onChange(application.id, next)}
+      />
+    </div>
+  ));
+}
 
-      {chosen > 0 && startAtLogin && !startAtLogin.enabled && (
-        <p className="setting-hint">
-          Start at login is off, so these come up only when you start Paddock yourself.
-        </p>
-      )}
+/** What the sequence as a whole will do, and the platform's caveat about the login entry. */
+function startupNote(applications, startAtLogin) {
+  const chosen = applications.filter((application) => application.autoStart).length;
+  const sequence = chosen === 0
+    ? 'No applications are chosen, so Paddock starts with nothing running.'
+    : `${chosen} of ${applications.length} start in the numbered order, each with only its enabled processes.`;
+  const off = chosen > 0 && startAtLogin && !startAtLogin.enabled
+    ? 'Start at login is off, so these come up only when you start Paddock yourself.'
+    : null;
+  return [startAtLogin?.note, applications.length > 0 && sequence, off].filter(Boolean).join(' ');
+}
 
-      {applications.length === 0 ? (
-        <p className="empty-text">No applications yet.</p>
+/**
+ * @param {{startAtLogin: object|null, unreadable: boolean, saving: boolean,
+ *          onStartAtLogin: (enabled: boolean) => void, applications: object[],
+ *          isBusy: (id: string) => boolean,
+ *          onAutoStart: (applicationId: string, autoStart: boolean) => void}} props
+ *   `unreadable` is whether the settings request failed, which is what ends "Reading…"
+ */
+function Startup({ startAtLogin, unreadable, saving, onStartAtLogin, applications, isBusy, onAutoStart }) {
+  return (
+    <SettingsGroup title="Startup" note={startupNote(applications, startAtLogin)}>
+      {startAtLogin ? (
+        <StartAtLogin status={startAtLogin} saving={saving} onChange={onStartAtLogin} />
       ) : (
-        <ul className="autostart-list">
-          {applications.map((application) => (
-            <li key={application.id} className="autostart-row">
-              <StatusDot status={application.status} />
-              <span className="app-name">{application.name}</span>
-              <span className="app-count">{processesLabel(application.processCounts)}</span>
-              <Switch
-                checked={application.autoStart}
-                disabled={isBusy(application.id)}
-                label={`Start ${application.name} with Paddock`}
-                onChange={(next) => onChange(application.id, next)}
-              />
-            </li>
-          ))}
-        </ul>
+        <TextRow>{unreadable ? 'The login setting could not be read.' : 'Reading settings…'}</TextRow>
       )}
-    </section>
+      <p className="group-subhead">When Paddock starts, one after another</p>
+      <AutoStartRows applications={applications} isBusy={isBusy} onChange={onAutoStart} />
+    </SettingsGroup>
   );
 }
 
-/** @param {{instance: object}} props */
-function ThisCopy({ instance }) {
-  const titleId = useId();
+/** The last segment of an install path — the checkout's name, which is what tells two copies apart. */
+const folderName = (directory) => directory.split(/[\\/]/).filter(Boolean).pop() ?? directory;
+
+/**
+ * The facts, folded behind the three that identify the copy at a glance. "Runs" is shown only when
+ * the entry is stale: otherwise it is exactly this copy's node and install folder, listed above.
+ * @param {{instance: object, startAtLogin: object}} props
+ */
+function AboutThisCopy({ instance, startAtLogin }) {
+  const [open, setOpen] = useState(false);
+  const stale = startAtLogin.problems.length > 0 && startAtLogin.runs;
+
   return (
-    <section className="panel settings-section" aria-labelledby={titleId}>
-      <div className="setting-text">
-        <h2 id={titleId}>This copy</h2>
-        <p className="hint">What Start at login would start, and where it keeps its data.</p>
-      </div>
-      <dl className="process-facts settings-facts">
-        <dt>install</dt>
-        <dd><code>{instance.installDir}</code></dd>
-        <dt>node</dt>
-        <dd><code>{instance.nodeVersion}</code> <code>{instance.nodePath}</code></dd>
-        <dt>data</dt>
-        <dd><code>{instance.dataDir}</code></dd>
-        <dt>pid</dt>
-        <dd><code>{instance.pid}</code></dd>
-      </dl>
-    </section>
+    <SettingsGroup title="About this copy" note="What Start at login would start, and where it keeps its data.">
+      <button
+        type="button"
+        className="group-row group-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="row-icon"><Icon name="info" size={14} /></span>
+        <span className="row-text">
+          <span className="row-title">{folderName(instance.installDir)}</span>
+          <span className="row-sub">pid {instance.pid} · node {instance.nodeVersion}</span>
+        </span>
+        <Icon name="chevron" size={14} className={open ? 'rotated' : ''} />
+      </button>
+
+      {open && (
+        <>
+          <dl className="group-facts">
+            <PathFact label="Install" value={instance.installDir} />
+            <PathFact label="Data" value={instance.dataDir} />
+            <PathFact label="Node" value={instance.nodePath} />
+          </dl>
+          {startAtLogin.supported && (
+            <>
+              <p className="group-subhead">Login entry</p>
+              <dl className="group-facts">
+                <PathFact label="File" value={startAtLogin.location} />
+                {stale && (
+                  <Fact label="Runs">
+                    <code>{[startAtLogin.runs.program, ...startAtLogin.runs.args].join(' ')}</code>
+                  </Fact>
+                )}
+                <PathFact label="Log" value={startAtLogin.logFile} />
+              </dl>
+            </>
+          )}
+        </>
+      )}
+    </SettingsGroup>
   );
 }
 
@@ -247,34 +309,26 @@ export default function SettingsPage({ applications, isBusy, onAutoStart }) {
 
   return (
     <>
-      <header className="page-head">
-        <div>
-          <h1>Settings</h1>
-          <p className="page-sub">Paddock itself: how it starts, and where it keeps things.</p>
-        </div>
-      </header>
-
-      {error && (
-        <p className="notice danger" role="alert">
-          <Icon name="alert" />
-          <span>{error}</span>
-        </p>
-      )}
+      <Toolbar title="Settings" subtitle="Paddock itself: how it starts, and where it keeps things." />
 
       <div className="settings">
-        <Appearance />
-        {settings ? (
-          <StartAtLogin status={settings.startAtLogin} saving={saving} onChange={setStartAtLogin} />
-        ) : (
-          !error && <p className="empty-text">Reading settings…</p>
+        {error && (
+          <p className="notice danger" role="alert">
+            <Icon name="alert" />
+            <span>{error}</span>
+          </p>
         )}
-        <AutoStartApplications
-          applications={applications}
+        <Appearance />
+        <Startup
           startAtLogin={settings?.startAtLogin ?? null}
+          unreadable={!settings && error !== null}
+          saving={saving}
+          onStartAtLogin={setStartAtLogin}
+          applications={applications}
           isBusy={isBusy}
-          onChange={onAutoStart}
+          onAutoStart={onAutoStart}
         />
-        {settings && <ThisCopy instance={settings.instance} />}
+        {settings && <AboutThisCopy instance={settings.instance} startAtLogin={settings.startAtLogin} />}
       </div>
     </>
   );

@@ -23,20 +23,35 @@ const LABEL = 'local.paddock';
 
 const RECORD_FILE = path.join(DATA_DIR, 'login-item.json');
 
-/** Set in the entry's environment, which is how a running copy knows a login started it. */
+/**
+ * Set in the entry's environment, which is how a running copy knows a login started it. The desktop
+ * app sets it on the server it forks when a login opened the app.
+ */
 const LOGIN_ITEM_ENV = 'PADDOCK_LOGIN_ITEM';
+
+/**
+ * Set by the desktop app on the server it forks: the app's own executable. There `process.execPath`
+ * is Electron's helper, which a login must not start — the app is what the entry opens.
+ */
+const DESKTOP_APP_ENV = 'PADDOCK_DESKTOP_APP';
 
 /**
  * What the entry runs: this checkout, under the node binary running it right now — the one proven to
  * work with it. A version manager's alias would follow upgrades, but it would also silently pick a
  * node this checkout has never run on; a pinned path that goes missing is caught by `problemsOf`.
- * @returns {import('./platform/index.js').LoginItemSpec}
+ * Under the desktop app, the app itself, which starts this server on its own.
+ * @param {string} [desktopApp]
  */
+const launchCommand = (desktopApp) =>
+  desktopApp
+    ? { program: desktopApp, args: [] }
+    : { program: process.execPath, args: [path.join(ROOT_DIR, 'server.js')] };
+
+/** @returns {import('./platform/index.js').LoginItemSpec} */
 const currentSpec = () => ({
   label: LABEL,
   home: os.homedir(),
-  program: process.execPath,
-  args: [path.join(ROOT_DIR, 'server.js')],
+  ...launchCommand(process.env[DESKTOP_APP_ENV]),
   workingDirectory: ROOT_DIR,
   logFile: path.join(LOG_DIR, 'paddock.log'),
   launcherDir: DATA_DIR,
@@ -75,7 +90,7 @@ export function problemsOf({ installed, record, spec, programExists }) {
     problems.push(`It starts the copy of Paddock at ${record.workingDirectory}, not this one.`);
   }
   if (!programExists) {
-    problems.push(`The node it runs, ${record.program}, no longer exists.`);
+    problems.push(`It runs ${record.program}, which no longer exists.`);
   }
   return problems;
 }

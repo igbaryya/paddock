@@ -31,7 +31,7 @@ const procPath = (applicationId, processId) =>
   `${appPath(applicationId)}/processes/${encodeURIComponent(processId)}`;
 
 /**
- * @param {'GET'|'POST'|'PATCH'|'DELETE'} method
+ * @param {'GET'|'POST'|'PUT'|'PATCH'|'DELETE'} method
  * @param {string} path relative to /api
  * @param {{body?: object, signal?: AbortSignal}} [options]
  */
@@ -56,18 +56,29 @@ async function request(method, path, options = {}) {
 /** @param {AbortSignal} [signal] */
 export const listApplications = (signal) => request('GET', '/applications', { signal });
 
-/** @param {{name: string, description?: string}} input */
+/** @param {{name: string, description?: string, kind?: 'processes'|'postgres'}} input */
 export const createApplication = (input) => request('POST', '/applications', { body: input });
 
 /**
  * @param {string} applicationId
- * @param {{name?: string, description?: string, autoStart?: boolean}} patch
+ * @param {{name?: string, description?: string, autoStart?: boolean, postgres?: object}} patch
+ *   `postgres` defines a PostgreSQL application's server the first time, and edits it after
  */
 export const updateApplication = (applicationId, patch) =>
   request('PATCH', appPath(applicationId), { body: patch });
 
 /** @param {string} applicationId */
 export const deleteApplication = (applicationId) => request('DELETE', appPath(applicationId));
+
+/**
+ * Where the canvas has left the application's cards. Sent whole on every drop — the manager stores
+ * exactly the positions of the cards being shown — and answers with the layout, not an application
+ * view: moving a card changes nothing about what is running.
+ * @param {string} applicationId
+ * @param {Record<string, {x: number, y: number}>} layout keyed by node id
+ */
+export const saveLayout = (applicationId, layout) =>
+  request('PUT', `${appPath(applicationId)}/layout`, { body: { layout } });
 
 /** @param {string} applicationId @param {object} input process configuration */
 export const addProcess = (applicationId, input) =>

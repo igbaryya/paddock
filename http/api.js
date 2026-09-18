@@ -22,6 +22,8 @@ const route = (method, pattern, handler) => ({
 
 const routes = [
   route('GET', '/api/health', () => ({
+    // How the desktop app tells a Paddock already on its port from anything else holding it.
+    service: 'paddock',
     status: 'ok',
     pid: process.pid,
     uptimeMs: Math.round(process.uptime() * 1_000),
@@ -36,6 +38,11 @@ const routes = [
   route('DELETE', '/api/applications/:appId', async ({ params }) => {
     await service.deleteApplication(params.appId);
   }),
+
+  // PUT rather than PATCH: the canvas sends every card it is showing, and the layout it sends
+  // replaces the stored one entirely. Dashboard-only — there is no canvas in an agent's context.
+  route('PUT', '/api/applications/:appId/layout', async ({ params, req }) =>
+    service.setApplicationLayout(params.appId, (await readJsonBody(req)).layout)),
 
   route('POST', '/api/applications/:appId/start', ({ params }) =>
     service.startApplication(params.appId)),

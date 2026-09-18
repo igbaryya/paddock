@@ -10,6 +10,7 @@
  */
 import { useState } from 'react';
 import Icon from './Icon.jsx';
+import IconButton from './IconButton.jsx';
 
 /** Medium and low come from a directory or a command-line substring — a hint, and labelled as one. */
 const isTrusted = (owner) => owner.confidence === 'exact' || owner.confidence === 'high';
@@ -77,31 +78,38 @@ function PortRow({ usage, busy, onStopManaged, onRestartManaged, onStopUnmanaged
         </td>
         <td className="port-actions">
           <div className="port-actions-inner">
-          {managed ? (
-            <>
-              <button type="button" className="btn small" disabled={busy} onClick={onRestartManaged}>
-                <Icon name="restart" />
-                Restart
-              </button>
-              <button type="button" className="btn small" disabled={busy} onClick={onStopManaged}>
-                <Icon name="stop" />
-                Stop
-              </button>
-            </>
-          ) : (
-            // No Restart for anything unmanaged: nothing here knows how it was started, and a
-            // fabricated command would be worse than no button.
-            <button
-              type="button"
-              className="btn small"
-              disabled={busy || !stoppable}
-              title={owner.kind === 'ambiguous' ? 'Owner is ambiguous — resolve it in the application first' : undefined}
-              onClick={onStopUnmanaged}
-            >
-              <Icon name="stop" />
-              Stop
-            </button>
-          )}
+            {managed ? (
+              <>
+                <IconButton
+                  icon="restart"
+                  label={`Restart ${owner.processName}`}
+                  className="small ghost"
+                  disabled={busy}
+                  onClick={onRestartManaged}
+                />
+                <IconButton
+                  icon="stop"
+                  label={`Stop ${owner.processName}`}
+                  className="small ghost"
+                  disabled={busy}
+                  onClick={onStopManaged}
+                />
+              </>
+            ) : (
+              // No Restart for anything unmanaged: nothing here knows how it was started, and a
+              // fabricated command would be worse than no button.
+              <IconButton
+                icon="stop"
+                label={
+                  owner.kind === 'ambiguous'
+                    ? 'Owner is ambiguous — resolve it in the application first'
+                    : `Stop pid ${usage.pid ?? 'unknown'}`
+                }
+                className="small ghost"
+                disabled={busy || !stoppable}
+                onClick={onStopUnmanaged}
+              />
+            )}
           </div>
         </td>
       </tr>
