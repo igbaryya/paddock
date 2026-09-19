@@ -112,6 +112,13 @@ const routes = [
   // and there is no MCP tool that could act on it.
   route('GET', '/api/postgres/discover', () => service.discoverClusters()),
 
+  route('GET', '/api/mcp', () => service.getMcp()),
+  route('POST', '/api/mcp/configure', async ({ req }) => service.configureMcp(await readJsonBody(req))),
+  route('PATCH', '/api/mcp', async ({ req }) => service.updateMcp(await readJsonBody(req))),
+  route('POST', '/api/mcp/start', () => service.startMcp()),
+  route('POST', '/api/mcp/stop', () => service.stopMcp()),
+  route('POST', '/api/mcp/restart', () => service.restartMcp()),
+
   route('GET', '/api/settings', () => service.getSettings()),
   route('PATCH', '/api/settings', async ({ req }) => service.updateSettings(await readJsonBody(req))),
 

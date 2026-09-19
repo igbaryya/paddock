@@ -23,6 +23,8 @@ import OverviewPage from './pages/OverviewPage.jsx';
 import ApplicationPage from './pages/ApplicationPage.jsx';
 import PortsPage from './pages/PortsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import McpPage from './pages/McpPage.jsx';
+import McpSetupWizard from './components/McpSetupWizard.jsx';
 
 /**
  * `updateProcess` flags the process whose configuration changed under a running instance. The
@@ -68,6 +70,7 @@ export default function App() {
   const [busy, setBusy] = useState(() => new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteIntent, setPaletteIntent] = useState(null);
+  const [mcpWizardOpen, setMcpWizardOpen] = useState(false);
 
   /**
    * Run one manager command. `key` is the application or process the command belongs to, so only
@@ -94,6 +97,31 @@ export default function App() {
     },
     [reload]
   );
+
+  useEffect(() => {
+    if (connection !== 'live') return;
+    api.getMcp().then(
+      (state) => {
+        if (!state.configured) setMcpWizardOpen(true);
+      },
+      () => {}
+    );
+  }, [connection]);
+
+  const runMcp = (action, body) =>
+    run('mcp', async () => {
+      if (action === 'start') return api.startMcp();
+      if (action === 'stop') return api.stopMcp();
+      if (action === 'restart') return api.restartMcp();
+      if (action === 'update') return api.updateMcp(body);
+      return null;
+    });
+
+  const installMcp = (port) =>
+    run('mcp', async () => {
+      await api.configureMcp({ port });
+      setMcpWizardOpen(false);
+    });
 
   const runApplication = async (applicationId, action) => {
     const result = await run(applicationId, () => api.applicationAction(applicationId, action));
@@ -298,6 +326,10 @@ export default function App() {
           />
         )}
 
+        {route.name === 'mcp' && (
+          <McpPage busy={busy.has('mcp')} onAction={runMcp} />
+        )}
+
         {route.name === 'settings' && (
           <SettingsPage
             applications={applications}
@@ -357,6 +389,10 @@ export default function App() {
         actionContext={{ applications, runApplication, runProcess, setIntent: setPaletteIntent }}
         onClose={() => setPaletteOpen(false)}
       />
+
+      {mcpWizardOpen && (
+        <McpSetupWizard busy={busy.has('mcp')} onSubmit={installMcp} />
+      )}
     </div>
   );
 }

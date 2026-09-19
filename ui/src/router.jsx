@@ -18,6 +18,7 @@ export const paths = {
   overview: () => '/',
   application: (id) => `/applications/${encodeURIComponent(id)}`,
   ports: () => '/ports',
+  mcp: () => '/mcp-settings',
   settings: () => '/settings',
 };
 
@@ -26,6 +27,7 @@ function parse(pathname) {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return { name: 'overview' };
   if (segments[0] === 'ports' && segments.length === 1) return { name: 'ports' };
+  if (segments[0] === 'mcp-settings' && segments.length === 1) return { name: 'mcp' };
   if (segments[0] === 'settings' && segments.length === 1) return { name: 'settings' };
   if (segments[0] === 'applications' && segments.length === 2) {
     return { name: 'application', applicationId: decodeURIComponent(segments[1]) };
@@ -35,6 +37,13 @@ function parse(pathname) {
 
 export function useRoute() {
   const [route, setRoute] = useState(() => parse(window.location.pathname));
+
+  useEffect(() => {
+    // `/mcp` is the agent endpoint, not a dashboard page — send old bookmarks to the settings UI.
+    if (window.location.pathname === '/mcp') {
+      navigate(paths.mcp(), { replace: true });
+    }
+  }, []);
 
   useEffect(() => {
     const sync = () => setRoute(parse(window.location.pathname));

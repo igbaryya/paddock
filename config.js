@@ -99,6 +99,11 @@ export const DISPLAY_HOST = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : 
 /** 0 is legal and means "an ephemeral port"; out of range would throw ERR_SOCKET_BAD_PORT at listen. */
 export const PORT = intFromEnv('PADDOCK_PORT', 4599, { min: 0, max: 65_535 });
 
+/** When set, overrides the MCP port stored in the database. */
+export const MCP_PORT_OVERRIDE = trimmedEnv('PADDOCK_MCP_PORT')
+  ? intFromEnv('PADDOCK_MCP_PORT', 4600, { min: 1024, max: 65_535 })
+  : null;
+
 export const DATA_DIR = resolveDataDir({ env: process.env, platform: process.platform });
 
 /** The configuration document: applications and their processes. */

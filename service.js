@@ -19,7 +19,9 @@ import * as discovery from './postgres/discovery.js';
 import * as pool from './postgres/pool.js';
 import * as catalog from './postgres/catalog.js';
 import * as admin from './postgres/admin.js';
-import { DATA_DIR, ROOT_DIR } from './config.js';
+import { DATA_DIR, MCP_PORT_OVERRIDE, ROOT_DIR } from './config.js';
+import * as mcpListener from './mcp-listener.js';
+import * as mcpPrefs from './mcp-preferences.js';
 
 /**
  * Re-exported so `http/` never has to reach past this layer for runtime events. PostgreSQL servers
@@ -840,6 +842,161 @@ export async function discoverClusters() {
   return { clusters };
 }
 
+// --- MCP -------------------------------------------------------------------------------------
+
+const effectiveMcpPort = (prefs) => MCP_PORT_OVERRIDE ?? prefs.port;
+
+const mcpView = async () => {
+  const prefs = await mcpPrefs.read();
+  const runtime = mcpListener.status();
+  const port = effectiveMcpPort(prefs);
+  return {
+    configured: prefs.configured || MCP_PORT_OVERRIDE !== null,
+    enabled: prefs.enabled,
+    port,
+    portLocked: MCP_PORT_OVERRIDE !== null,
+    running: runtime.running,
+    boundPort: runtime.port,
+    url: runtime.running ? mcpPrefs.mcpUrl(runtime.port) : port ? mcpPrefs.mcpUrl(port) : null,
+    lastStartedAt: prefs.lastStartedAt,
+    lastStoppedAt: prefs.lastStoppedAt,
+    audit: prefs.audit,
+  };
+};
+
+/** @returns {Promise<object>} */
+export async function getMcp() {
+  return mcpView();
+}
+
+/**
+ * First-run installation: pick a port, mark configured, and start the listener.
+ * @param {{port: number}} input
+ */
+export async function configureMcp(input) {
+  const port = mcpPrefs.validatePort(input.port);
+  await mcpPrefs.update((prefs) => {
+    mcpPrefs.appendAudit(prefs, 'configure', `port ${port}`);
+    return {
+      ...prefs,
+      port,
+      configured: true,
+      enabled: true,
+    };
+  });
+  await startMcp();
+  return mcpView();
+}
+
+/**
+ * @param {{port?: number, enabled?: boolean}} patch
+ */
+export async function updateMcp(patch) {
+  if (patch.port !== undefined && MCP_PORT_OVERRIDE !== null) {
+    throw new applications.ValidationError(
+      'MCP port is locked by PADDOCK_MCP_PORT in the environment'
+    );
+  }
+  if (patch.port !== undefined) mcpPrefs.validatePort(patch.port);
+  if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') {
+    throw new applications.ValidationError(
+      `enabled must be true or false, received ${JSON.stringify(patch.enabled)}`
+    );
+  }
+
+  const restartNeeded = patch.port !== undefined && mcpListener.status().running;
+  await mcpPrefs.update((prefs) => {
+    if (patch.port !== undefined) {
+      mcpPrefs.appendAudit(prefs, 'port', String(patch.port));
+      prefs.port = patch.port;
+      prefs.configured = true;
+    }
+    if (patch.enabled !== undefined) {
+      mcpPrefs.appendAudit(prefs, patch.enabled ? 'enable' : 'disable', null);
+      prefs.enabled = patch.enabled;
+    }
+    return prefs;
+  });
+
+  if (patch.enabled === false) await stopMcp();
+  if (patch.enabled === true) await startMcp();
+  if (restartNeeded) await restartMcp();
+  return mcpView();
+}
+
+/** @returns {Promise<object>} */
+export async function startMcp() {
+  const prefs = await mcpPrefs.read();
+  const port = effectiveMcpPort(prefs);
+  if (!port) {
+    throw new applications.ValidationError('MCP is not installed — choose a port first');
+  }
+  if (!prefs.configured && MCP_PORT_OVERRIDE === null) {
+    throw new applications.ValidationError('MCP is not installed — choose a port first');
+  }
+  if (mcpListener.status().running) return mcpView();
+
+  const bound = await mcpListener.start(port);
+  await mcpPrefs.update((current) => {
+    mcpPrefs.appendAudit(current, 'start', `listening on ${bound}`);
+    return {
+      ...current,
+      enabled: true,
+      lastStartedAt: new Date().toISOString(),
+    };
+  });
+  console.log(`[paddock] MCP  http://${mcpPrefs.mcpUrl(bound)?.replace('http://', '') ?? bound}`);
+  return mcpView();
+}
+
+/** @returns {Promise<object>} */
+export async function stopMcp() {
+  if (!mcpListener.status().running) return mcpView();
+  await mcpListener.stop();
+  await mcpPrefs.update((prefs) => {
+    mcpPrefs.appendAudit(prefs, 'stop', null);
+    return {
+      ...prefs,
+      enabled: false,
+      lastStoppedAt: new Date().toISOString(),
+    };
+  });
+  return mcpView();
+}
+
+/** @returns {Promise<object>} */
+export async function restartMcp() {
+  const prefs = await mcpPrefs.read();
+  const port = effectiveMcpPort(prefs);
+  if (!port) throw new applications.ValidationError('MCP is not installed — choose a port first');
+  const bound = await mcpListener.restart(port);
+  await mcpPrefs.update((current) => {
+    mcpPrefs.appendAudit(current, 'restart', `listening on ${bound}`);
+    return {
+      ...current,
+      enabled: true,
+      lastStartedAt: new Date().toISOString(),
+    };
+  });
+  console.log(`[paddock] MCP  http://${mcpPrefs.mcpUrl(bound)?.replace('http://', '') ?? bound}`);
+  return mcpView();
+}
+
+/** Start MCP after the UI server is ready when installation is complete. */
+export async function bootstrapMcp() {
+  const prefs = await mcpPrefs.read();
+  const port = effectiveMcpPort(prefs);
+  if (!port) return;
+  if (!prefs.configured && MCP_PORT_OVERRIDE === null) return;
+  if (!prefs.enabled && MCP_PORT_OVERRIDE === null) return;
+  try {
+    await mcpListener.start(port);
+    console.log(`[paddock] MCP  http://${mcpPrefs.mcpUrl(mcpListener.status().port)?.replace('http://', '') ?? port}`);
+  } catch (err) {
+    console.error(`[paddock] MCP did not start: ${err.message}`);
+  }
+}
+
 // --- settings --------------------------------------------------------------------------------
 
 /**
@@ -1038,6 +1195,7 @@ manager.events.on('status', () => ports.invalidate());
  */
 export async function shutdown() {
   shuttingDown = true;
+  await mcpListener.stop().catch(() => {});
   await pool.closeAll();
   lifecycle.close();
   // Before the managed processes, and unlike a PostgreSQL server: an open shell is a child of this

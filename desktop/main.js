@@ -149,11 +149,15 @@ async function main() {
 
   const server = await resolveServer(config);
   if (!server) return;
+  const mcpUrl = await fetch(`${server.url}/api/mcp`)
+    .then((res) => (res.ok ? res.json() : null))
+    .then((view) => view?.url ?? new URL('/mcp', server.url).href)
+    .catch(() => new URL('/mcp', server.url).href);
   const open = () => showDashboard(server.url);
   app.on('second-instance', open);
   app.on('activate', open);
   tray = createTray({
-    mcpUrl: new URL('/mcp', server.url).href,
+    mcpUrl,
     attachedPid: server.attachedPid,
     onOpen: open,
     onQuit: () => app.quit(),

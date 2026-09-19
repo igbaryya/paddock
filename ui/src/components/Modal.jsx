@@ -11,11 +11,12 @@ const FOCUSABLE = 'input, textarea, select, button';
 
 /**
  * @param {{title: string, onClose: () => void, children: React.ReactNode,
- *          size?: 'sheet'|'full'}} props
+ *          size?: 'sheet'|'full', persistent?: boolean}} props
  *   `full` is the logger: the same shell, taking the window, because a tail in a 600px sheet is
- *   the drawer all over again.
+ *   the drawer all over again. `persistent` keeps the scrim from dismissing — for a first-run step
+ *   that must be finished before anything else works.
  */
-export default function Modal({ title, onClose, children, size = 'sheet' }) {
+export default function Modal({ title, onClose, children, size = 'sheet', persistent = false }) {
   const dialogRef = useRef(null);
   const titleId = useId();
   // Read through a ref: the caller passes a fresh arrow every render, and a dependency on it would
@@ -27,7 +28,7 @@ export default function Modal({ title, onClose, children, size = 'sheet' }) {
     const opener = document.activeElement;
     dialogRef.current.querySelector(FOCUSABLE)?.focus();
     const onKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
+      if (event.key !== 'Escape' || persistent) return;
       // Stopped here on the way to window, where the canvas's drawer is listening: a form opened
       // from that drawer is the layer on top, so Escape must dismiss this and only this. Without
       // it one press would close the form and the panel that opened it.
@@ -45,6 +46,7 @@ export default function Modal({ title, onClose, children, size = 'sheet' }) {
     <div
       className="backdrop"
       onMouseDown={(event) => {
+        if (persistent) return;
         if (event.target === event.currentTarget) onClose();
       }}
     >

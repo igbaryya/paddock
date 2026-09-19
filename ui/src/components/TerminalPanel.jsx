@@ -14,9 +14,16 @@ import { useEffect, useRef, useState } from 'react';
 import EmptyState from './EmptyState.jsx';
 import Icon from './Icon.jsx';
 import IconButton from './IconButton.jsx';
+import LogViewer from './LogViewer.jsx';
 import Terminal from './Terminal.jsx';
 import TerminalMenu from './TerminalMenu.jsx';
 import { closeTerminal, listTerminals, openTerminal } from '../api.js';
+
+/** @type {const} */
+const PANEL_TABS = [
+  { id: 'terminal', label: 'Terminal' },
+  { id: 'output', label: 'Output' },
+];
 
 /** @param {string} cwd */
 function cwdLeaf(cwd) {
@@ -25,15 +32,23 @@ function cwdLeaf(cwd) {
 }
 
 /**
- * @param {{application: object,
+ * @param {{application: object, logs: object[], onClearLogs: () => void,
  *          request?: {kind: 'session', sessionId: string}|{kind: 'new', processId: string}|null,
  *          onRequestHandled?: () => void, onClose?: () => void}} props
  */
-export default function TerminalPanel({ application, request = null, onRequestHandled, onClose }) {
+export default function TerminalPanel({
+  application,
+  logs,
+  onClearLogs,
+  request = null,
+  onRequestHandled,
+  onClose,
+}) {
   const [support, setSupport] = useState(null);
   const [targets, setTargets] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [chosen, setChosen] = useState(null);
+  const [panelTab, setPanelTab] = useState('terminal');
   const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -63,7 +78,6 @@ export default function TerminalPanel({ application, request = null, onRequestHa
       if (menuAnchorRef.current?.contains(event.target)) return;
       setMenuOpen(false);
     };
-    // After the opening click finishes — attaching synchronously can swallow the first interaction.
     const id = requestAnimationFrame(() => {
       document.addEventListener('pointerdown', onPointerDown);
     });
@@ -89,6 +103,7 @@ export default function TerminalPanel({ application, request = null, onRequestHa
       const session = await openTerminal(application.id, { processId });
       setSessions((current) => [...current, session]);
       setChosen(session.id);
+      setPanelTab('terminal');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -104,11 +119,11 @@ export default function TerminalPanel({ application, request = null, onRequestHa
     if (request.kind === 'session') {
       const match = sessions.find((session) => session.id === request.sessionId);
       if (!match) {
-        // Initial session list has not arrived yet — try again on the next render.
         if (sessions.length === 0) return;
       } else {
         setChosen(match.id);
       }
+      setPanelTab('terminal');
       handledRequest.current = key;
       onRequestHandled?.();
       return;
@@ -139,55 +154,67 @@ export default function TerminalPanel({ application, request = null, onRequestHa
   }
 
   const active = sessions.find((session) => session.id === chosen) ?? sessions.at(-1) ?? null;
+  const onTerminal = panelTab === 'terminal';
 
   return (
     <section className="panel terminals" aria-label="Terminals">
       <div className="panel-head terminal-head">
         <div className="terminal-head-tabs" role="tablist" aria-label="Panel">
-          <span className="terminal-head-tab selected" role="tab" aria-selected="true">
-            Terminal
-          </span>
+          {PANEL_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={panelTab === tab.id}
+              className={`terminal-head-tab${panelTab === tab.id ? ' selected' : ''}`}
+              onClick={() => setPanelTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
         {active && (
           <span className="terminal-head-session">
-            <Icon name="terminal" size={14} />
+            <Icon name={onTerminal ? 'terminal' : 'logs'} size={14} />
             <span>{active.processName ?? 'Shell'}</span>
           </span>
         )}
         <span className="spacer" />
-        <div className="terminal-actions">
-          <div className="menu-anchor" ref={menuAnchorRef}>
-            <IconButton
-              icon="plus"
-              label="New terminal"
-              className="small ghost"
-              disabled={busy}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((was) => !was)}
-            />
-            {menuOpen && (
-              <TerminalMenu
-                applicationId={application.id}
-                showSessions={false}
-                onPickSession={() => {}}
-                onPickTarget={open}
-                onClose={() => setMenuOpen(false)}
+        {onTerminal && (
+          <div className="terminal-actions">
+            <div className="menu-anchor" ref={menuAnchorRef}>
+              <IconButton
+                icon="plus"
+                label="New terminal"
+                className="small ghost"
+                disabled={busy}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen((was) => !was)}
+              />
+              {menuOpen && (
+                <TerminalMenu
+                  applicationId={application.id}
+                  showSessions={false}
+                  onPickSession={() => {}}
+                  onPickTarget={open}
+                  onClose={() => setMenuOpen(false)}
+                />
+              )}
+            </div>
+            {active && (
+              <IconButton
+                icon="trash"
+                label="Close terminal"
+                className="small ghost"
+                onClick={() => close(active.id)}
               />
             )}
           </div>
-          {active && (
-            <IconButton
-              icon="trash"
-              label="Close terminal"
-              className="small ghost"
-              onClick={() => close(active.id)}
-            />
-          )}
-          {onClose && (
-            <IconButton icon="close" label="Close panel" className="small ghost" onClick={onClose} />
-          )}
-        </div>
+        )}
+        {onClose && (
+          <IconButton icon="close" label="Close panel" className="small ghost" onClick={onClose} />
+        )}
       </div>
 
       {error && (
@@ -203,26 +230,43 @@ export default function TerminalPanel({ application, request = null, onRequestHa
         </EmptyState>
       ) : (
         <div className="terminal-body">
-          <div className="terminal-stack">
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="terminal-pane"
-                role="tabpanel"
-                hidden={session.id !== active?.id}
-              >
-                <Terminal
-                  sessionId={session.id}
-                  active={session.id === active?.id}
-                  onExit={() => markExited(session.id)}
-                  onGone={() => {
-                    const remaining = sessions.filter((item) => item.id !== session.id);
-                    if (chosen === session.id) setChosen(remaining.at(-1)?.id ?? null);
-                    forget(session.id);
-                  }}
-                />
-              </div>
-            ))}
+          <div className="terminal-main">
+            <div className="terminal-stack" hidden={!onTerminal}>
+              {sessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="terminal-pane"
+                  role="tabpanel"
+                  hidden={session.id !== active?.id}
+                >
+                  <Terminal
+                    sessionId={session.id}
+                    active={session.id === active?.id && onTerminal}
+                    onExit={() => markExited(session.id)}
+                    onGone={() => {
+                      const remaining = sessions.filter((item) => item.id !== session.id);
+                      if (chosen === session.id) setChosen(remaining.at(-1)?.id ?? null);
+                      forget(session.id);
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {!onTerminal && active?.processId && (
+              <LogViewer
+                embedded
+                application={application}
+                logs={logs}
+                processId={active.processId}
+                onClear={onClearLogs}
+              />
+            )}
+            {!onTerminal && active && !active.processId && (
+              <EmptyState icon="logs" title="No service linked">
+                This shell is not tied to a managed process, so there is nothing to tail.
+              </EmptyState>
+            )}
           </div>
 
           <aside className="terminal-sessions" aria-label="Open terminals">

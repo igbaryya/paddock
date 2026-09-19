@@ -164,6 +164,19 @@ export const getSettings = (signal) => request('GET', '/settings', { signal });
  */
 export const updateSettings = (patch) => request('PATCH', '/settings', { body: patch });
 
+/** @param {AbortSignal} [signal] */
+export const getMcp = (signal) => request('GET', '/mcp', { signal });
+
+/** @param {{port: number}} input */
+export const configureMcp = (input) => request('POST', '/mcp/configure', { body: input });
+
+/** @param {{port?: number, enabled?: boolean}} patch */
+export const updateMcp = (patch) => request('PATCH', '/mcp', { body: patch });
+
+export const startMcp = () => request('POST', '/mcp/start');
+export const stopMcp = () => request('POST', '/mcp/stop');
+export const restartMcp = () => request('POST', '/mcp/restart');
+
 /**
  * Whether this installation can open a terminal, where one may be opened for this application, and
  * which of them are already open.

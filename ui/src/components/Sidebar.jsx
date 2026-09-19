@@ -28,6 +28,7 @@ const MOD_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(nav
 export default function Sidebar({ applications, route, connection, portCount, onCreate, onOpenPalette }) {
   const onOverview = route.name === 'overview';
   const onPorts = route.name === 'ports';
+  const onMcp = route.name === 'mcp';
   const onSettings = route.name === 'settings';
 
   return (
@@ -70,6 +71,16 @@ export default function Sidebar({ applications, route, connection, portCount, on
             <Icon name="ports" />
             Local ports
             {portCount !== null && <span className="nav-count">{portCount}</span>}
+          </Link>
+        </li>
+        <li>
+          <Link
+            to={paths.mcp()}
+            className={`nav-item${onMcp ? ' active' : ''}`}
+            aria-current={onMcp ? 'page' : undefined}
+          >
+            <Icon name="braces" />
+            MCP
           </Link>
         </li>
         <li>

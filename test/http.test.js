@@ -27,6 +27,7 @@ const SSE_EVENT_TIMEOUT_MS = 20_000;
 /** @type {import('node:child_process').ChildProcess} */
 let server;
 let port;
+let mcpPort;
 let dataDir;
 let repoDir;
 let serverStderr = '';
@@ -67,9 +68,9 @@ const putJson = (p, body) =>
  *          version?:string}} spec
  * @returns {Promise<{status:number, headers:Record<string,string>, body:string, reset:boolean}>}
  */
-function raw({ method = 'GET', target, headers = {}, body = '', version = 'HTTP/1.1' }) {
+function raw({ method = 'GET', target, headers = {}, body = '', version = 'HTTP/1.1', connectPort = port }) {
   return new Promise((resolve, reject) => {
-    const socket = net.connect(port, '127.0.0.1');
+    const socket = net.connect(connectPort, '127.0.0.1');
     const timer = setTimeout(() => {
       socket.destroy();
       reject(new Error(`raw ${method} ${target} timed out after 15s`));
@@ -100,7 +101,7 @@ function raw({ method = 'GET', target, headers = {}, body = '', version = 'HTTP/
     };
 
     socket.on('connect', () => {
-      const all = { Host: `127.0.0.1:${port}`, Connection: 'close', ...headers };
+      const all = { Host: `127.0.0.1:${connectPort}`, Connection: 'close', ...headers };
       if (body) all['Content-Length'] = String(Buffer.byteLength(body));
       // An explicit `undefined` means "omit this header entirely" — that is how a Host-less
       // request, which the guard must reject, is expressed.
@@ -127,8 +128,10 @@ function raw({ method = 'GET', target, headers = {}, body = '', version = 'HTTP/
  * wire contract (the Accept header, the SSE framing of the response) is what is under test.
  * @param {object} payload a JSON-RPC message
  */
+const mcpBaseUrl = () => `http://127.0.0.1:${mcpPort}`;
+
 async function mcp(payload, headers = {}) {
-  const res = await fetch(`${baseUrl()}/mcp`, {
+  const res = await fetch(`${mcpBaseUrl()}/mcp`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -209,7 +212,19 @@ async function startServer() {
   assert.ok(port > 0, 'the ephemeral port must be a real port number');
 }
 
-before(startServer, { timeout: SERVER_START_TIMEOUT_MS + 5_000 });
+async function installMcpForTests() {
+  mcpPort = port + 10_000;
+  const res = await postJson('/api/mcp/configure', { port: mcpPort });
+  assert.equal(res.status, 200, res.text);
+  const view = res.json();
+  assert.equal(view.running, true);
+  assert.equal(view.boundPort, mcpPort);
+}
+
+before(async () => {
+  await startServer();
+  await installMcpForTests();
+}, { timeout: SERVER_START_TIMEOUT_MS + 5_000 });
 
 after(async () => {
   if (server && serverExit === null) {
@@ -882,10 +897,15 @@ test('MCP reports an unknown application as a tool error, not a protocol error',
   assert.match(res.message.result.content[0].text, /NotFoundError: application/);
 });
 
-test('GET /mcp is 405 with Allow: POST and closes instead of hanging', async () => {
-  // The regression this pins is a stateless GET opening an SSE stream nobody ever writes to, so the
-  // timeout is the assertion: a hang must fail the test rather than stall the suite.
+test('GET /mcp on the dashboard port explains MCP moved to its own listener', async () => {
   const res = await fetch(`${baseUrl()}/mcp`, { signal: AbortSignal.timeout(5_000) });
+  const body = await res.json();
+  assert.equal(res.status, 404);
+  assert.equal(body.error.code, 'mcp_moved');
+});
+
+test('GET /mcp on the MCP port is 405 with Allow: POST and closes instead of hanging', async () => {
+  const res = await fetch(`${mcpBaseUrl()}/mcp`, { signal: AbortSignal.timeout(5_000) });
   const body = await res.text();
   assert.equal(res.status, 405);
   assert.equal(res.headers.get('allow'), 'POST');
@@ -899,6 +919,7 @@ test('a forged Host on /mcp is refused by the local-origin guard', async () => {
   const res = await raw({
     method: 'POST',
     target: '/mcp',
+    connectPort: mcpPort,
     headers: {
       Host: 'evil.com',
       'Content-Type': 'application/json',

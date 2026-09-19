@@ -33,7 +33,20 @@ process.env.PADDOCK_ENV_FILE = NO_ENV_FILE;
 
 const DB_FILE = path.join(DATA_DIR, 'applications.json');
 
-const DEFAULT_DOCUMENT = { version: 1, applications: [] };
+const DEFAULT_MCP_PREFERENCES = {
+  port: null,
+  configured: false,
+  enabled: false,
+  lastStartedAt: null,
+  lastStoppedAt: null,
+  audit: [],
+};
+
+const DEFAULT_DOCUMENT = {
+  version: 1,
+  applications: [],
+  preferences: { mcp: DEFAULT_MCP_PREFERENCES },
+};
 
 const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
 
@@ -119,7 +132,7 @@ describe('json-db', () => {
       return doc;
     });
 
-    assert.deepEqual(returned, { version: 1, applications: [application] });
+    assert.deepEqual(returned, { version: 1, applications: [application], preferences: { mcp: DEFAULT_MCP_PREFERENCES } });
     assert.deepEqual(await db.read(), returned);
     assert.deepEqual(await readDisk(), returned);
     assert.deepEqual(await listDataDir(), ['applications.json']);
@@ -148,6 +161,7 @@ describe('json-db', () => {
       applications: [
         { id: 'app_child0000', name: 'written-by-parent', kind: 'processes', postgres: null, processes: [] },
       ],
+      preferences: { mcp: DEFAULT_MCP_PREFERENCES },
     });
   });
 
@@ -303,6 +317,7 @@ describe('json-db', () => {
         { id: 'app_kept000000', kind: 'processes', postgres: null, processes: [] },
         { id: 'app_procs00000', kind: 'processes', postgres: null, processes: [] },
       ],
+      preferences: { mcp: DEFAULT_MCP_PREFERENCES },
     });
     assert.deepEqual(await listDataDir(), ['applications.json'], 'a migratable document must not be quarantined');
   });

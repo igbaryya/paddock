@@ -134,6 +134,8 @@ export default function ApplicationPage({
           <TerminalDrawer onClose={() => setTerminalOpen(false)}>
             <TerminalPanel
               application={application}
+              logs={logs}
+              onClearLogs={onClearLogs}
               request={terminalRequest}
               onRequestHandled={() => setTerminalRequest(null)}
               onClose={() => setTerminalOpen(false)}

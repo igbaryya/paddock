@@ -11,22 +11,22 @@
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
-import { DISPLAY_HOST, HOST, HOSTNAME, PORT, SHUTDOWN_GRACE_MS } from './config.js';
+import { DISPLAY_HOST, HOST, PORT, SHUTDOWN_GRACE_MS } from './config.js';
 import { json } from './http/respond.js';
 import { handleApi } from './http/api.js';
 import { handleEvents, start as startEvents, stop as stopEvents } from './http/events.js';
 import { handleTerminalStream, STREAM_PATH } from './http/terminal-stream.js';
 import { stop as stopStreams } from './http/sse.js';
-import { handleMcp } from './http/mcp.js';
 import { handleStatic } from './http/static.js';
 import { loginShellPath } from './platform/index.js';
 import { reapOrphans, killAllSync } from './process-manager.js';
-import { autoStartApplications, loadFavicons, shutdown as shutdownService } from './service.js';
+import {
+  autoStartApplications, bootstrapMcp, loadFavicons, shutdown as shutdownService,
+} from './service.js';
+import { isGuardedApiPath, isLocalRequest } from './http/local-origin.js';
 
 /** Bounded because it costs a login shell startup (~0.5 s) and is only a best-effort improvement. */
 const PATH_RESOLVE_TIMEOUT_MS = 3_000;
-
-const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', HOSTNAME]);
 
 /**
  * For the last thing printed before `process.exit`. Node's stderr is asynchronous when it is a pipe
@@ -42,24 +42,6 @@ const logSync = (message) => {
   }
 };
 
-/** @param {string} [value] an absolute URL — a Host header must be given a scheme first */
-const hostnameOf = (value) => {
-  try {
-    return new URL(value).hostname;
-  } catch {
-    return null;
-  }
-};
-
-/** Covers all of 127/8 and the IPv4-mapped form a dual-stack socket reports. */
-const isLoopbackAddress = (address = '') => {
-  const addr = address.startsWith('::ffff:') ? address.slice('::ffff:'.length) : address;
-  return addr === '::1' || addr.startsWith('127.');
-};
-
-const isGuardedPath = (pathname) =>
-  pathname === '/mcp' || pathname === '/api' || pathname.startsWith('/api/');
-
 /**
  * Only the path and the query are ever read downstream, so the base is a constant: parsing against
  * the Host header would let a hostile one throw out of the router before the guard below runs.
@@ -72,22 +54,6 @@ const parseTarget = (req) => {
     return null;
   }
 };
-
-/**
- * The one copy of the local-origin check. Deliberately port-agnostic: the Vite dev server proxies
- * from another port, and a page already served from loopback is not the threat — a page on a remote
- * origin driving the process manager is, and that is what this blocks.
- * @param {import('http').IncomingMessage} req
- */
-function isLocalRequest(req) {
-  // Checked first because it is the one layer a client cannot forge with a header.
-  if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
-  if (!req.headers.host) return false;
-  if (!LOCAL_HOSTNAMES.has(hostnameOf(`http://${req.headers.host}`))) return false;
-  const origin = req.headers.origin;
-  // An absent Origin is a non-browser client (an MCP agent); only a present foreign one is a threat.
-  return !origin || LOCAL_HOSTNAMES.has(hostnameOf(origin));
-}
 
 let markReady;
 
@@ -109,17 +75,30 @@ async function route(req, res) {
     return json(res, 400, { error: { message: 'malformed request target', code: 'bad_request' } });
   }
   const { pathname } = url;
-  if (isGuardedPath(pathname) && !isLocalRequest(req)) {
+  if (isGuardedApiPath(pathname) && !isLocalRequest(req)) {
     return json(res, 403, { error: { message: 'local requests only', code: 'forbidden' } });
   }
-  if (pathname === '/mcp') return handleMcp(req, res);
+  if (pathname === '/mcp') {
+    // `/mcp` is the agent endpoint on the MCP port. A browser bookmark to it on the dashboard port
+    // should land on the settings page instead of a JSON error.
+    if (req.method === 'GET' && req.headers.accept?.includes('text/html')) {
+      res.writeHead(302, { Location: '/mcp-settings', 'Cache-Control': 'no-store' });
+      return res.end();
+    }
+    return json(res, 404, {
+      error: {
+        message: 'MCP is served on its own port. Open /mcp-settings in the dashboard or GET /api/mcp.',
+        code: 'mcp_moved',
+      },
+    });
+  }
   if (pathname === '/api/events') return handleEvents(req, res);
   // Routed here rather than from the table in http/api.js for the same reason /api/events is: SSE
   // owns its response for the life of the connection, and that table answers every route with one
   // JSON body. Guarded above like the rest of /api, because it is under /api.
   const terminalStream = STREAM_PATH.exec(pathname);
   if (terminalStream) return handleTerminalStream(req, res, terminalStream[1]);
-  if (isGuardedPath(pathname)) {
+  if (isGuardedApiPath(pathname)) {
     if (await handleApi(req, res, url)) return;
     const message = `no route for ${req.method} ${pathname}`;
     return json(res, 404, { error: { message, code: 'not_found' } });
@@ -212,10 +191,10 @@ async function main() {
   await loadFavicons().catch((err) => console.error(`[paddock] favicon cache unreadable: ${err.message}`));
   startEvents();
   markReady();
+  await bootstrapMcp();
   // Printed last, so the line means "usable" — tests and scripts/dev.js wait for it.
   const { port } = server.address();
   console.log(`[paddock] UI   http://${DISPLAY_HOST}:${port}`);
-  console.log(`[paddock] MCP  http://${DISPLAY_HOST}:${port}/mcp`);
   // Last, and not awaited. After the port is held, so a second copy never starts anything; after the
   // reaper, so a leftover from a crashed run has released its port before its replacement binds it;
   // and after the startup line, so the dashboard is usable while the applications come up in it.

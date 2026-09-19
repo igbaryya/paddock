@@ -23,7 +23,11 @@ const asArray = (value) => (Array.isArray(value) ? value : []);
 
 const isObject = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const defaultDocument = () => ({ version: CURRENT_VERSION, applications: [] });
+const defaultDocument = () => ({
+  version: CURRENT_VERSION,
+  applications: [],
+  preferences: { mcp: { port: null, configured: false, enabled: false, lastStartedAt: null, lastStoppedAt: null, audit: [] } },
+});
 
 /** A document written by a newer build: refuse, never downgrade. Downgrading loses fields silently. */
 export class UnsupportedVersionError extends Error {
@@ -72,7 +76,21 @@ function migrate(doc) {
       ...app,
       processes: asArray(app.processes).filter(isObject),
     }));
-  return { ...doc, version: CURRENT_VERSION, applications };
+  const mcp = {
+    port: null,
+    configured: false,
+    enabled: false,
+    lastStartedAt: null,
+    lastStoppedAt: null,
+    audit: [],
+    ...(isObject(doc.preferences?.mcp) ? doc.preferences.mcp : {}),
+  };
+  return {
+    ...doc,
+    version: CURRENT_VERSION,
+    applications,
+    preferences: { ...(isObject(doc.preferences) ? doc.preferences : {}), mcp },
+  };
 }
 
 /**

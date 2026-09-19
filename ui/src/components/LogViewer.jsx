@@ -67,11 +67,12 @@ const LogLine = memo(function LogLine({ line, source, pretty }) {
 });
 
 /**
- * @param {{application: object, logs: object[], onClear: () => void, processId?: string|null}} props
- *   `processId` pins the tail to one process and hides the source tabs; without it the tail spans
- *   the application and the tabs choose
+ * @param {{application: object, logs: object[], onClear: () => void, processId?: string|null,
+ *          embedded?: boolean}} props `processId` pins the tail to one process and hides the source
+ *   tabs; without it the tail spans the application and the tabs choose. `embedded` drops the outer
+ *   panel chrome for sitting inside the docked terminal drawer.
  */
-export default function LogViewer({ application, logs, onClear, processId = null }) {
+export default function LogViewer({ application, logs, onClear, processId = null, embedded = false }) {
   const [chosen, setChosen] = useState('all');
   const [stream, setStream] = useState('all');
   const [following, setFollowing] = useState(true);
@@ -148,78 +149,94 @@ export default function LogViewer({ application, logs, onClear, processId = null
     setLeftAt(atBottom ? null : (previous) => previous ?? newest);
   };
 
-  return (
-    <section className="panel logs" aria-label="Process output">
-      <div className="panel-head">
+  const toolbar = (
+    <div className={embedded ? 'log-toolbar' : 'panel-head'}>
+      {!embedded && (
         <h2 className="panel-title">
           <Icon name="terminal" />
           Output
         </h2>
-        {!processId && (
-          <Segmented
-            className="log-tabs"
-            role="tablist"
-            label="Log source"
-            value={source}
-            onChange={setChosen}
-            options={[
-              { id: 'all', label: 'All' },
-              ...application.processes.map((process) => ({ id: process.id, label: process.name })),
-            ]}
-          />
-        )}
-        <span className="spacer" />
-        <Segmented label="Stream" value={stream} onChange={setStream} options={STREAMS} />
-        <button
-          type="button"
-          className="btn small"
-          aria-pressed={pretty}
-          title="Print JSON records over several lines, and unescape the traces inside them"
-          onClick={() => setPretty((on) => !on)}
-        >
-          <Icon name="braces" />
-          Pretty
-        </button>
-        <span className="meta">{visible.length.toLocaleString()} lines</span>
-        <button type="button" className="btn small ghost" onClick={onClear}>
-          Clear
-        </button>
-      </div>
+      )}
+      {!processId && (
+        <Segmented
+          className="log-tabs"
+          role="tablist"
+          label="Log source"
+          value={source}
+          onChange={setChosen}
+          options={[
+            { id: 'all', label: 'All' },
+            ...application.processes.map((process) => ({ id: process.id, label: process.name })),
+          ]}
+        />
+      )}
+      <span className="spacer" />
+      <Segmented label="Stream" value={stream} onChange={setStream} options={STREAMS} />
+      <button
+        type="button"
+        className="btn small"
+        aria-pressed={pretty}
+        title="Print JSON records over several lines, and unescape the traces inside them"
+        onClick={() => setPretty((on) => !on)}
+      >
+        <Icon name="braces" />
+        Pretty
+      </button>
+      <span className="meta">{visible.length.toLocaleString()} lines</span>
+      <button type="button" className="btn small ghost" onClick={onClear}>
+        Clear
+      </button>
+    </div>
+  );
 
-      <div className="log-body">
-        <div
-          className="log-viewport"
-          ref={viewportRef}
-          onScroll={onScroll}
-          tabIndex={0}
-          role="log"
-          aria-live="off"
-        >
-          <div className="log-lines" ref={contentRef}>
-            {visible.length === 0 ? (
-              <p className="empty-inline">No output captured yet.</p>
-            ) : (
-              visible.map((line) => (
-                <LogLine
-                  key={line.seq}
-                  line={line}
-                  source={source === 'all' ? names.get(line.processId) ?? line.processId : null}
-                  pretty={pretty}
-                />
-              ))
-            )}
-          </div>
+  const body = (
+    <div className="log-body">
+      <div
+        className="log-viewport"
+        ref={viewportRef}
+        onScroll={onScroll}
+        tabIndex={0}
+        role="log"
+        aria-live="off"
+      >
+        <div className="log-lines" ref={contentRef}>
+          {visible.length === 0 ? (
+            <p className="empty-inline">No output captured yet.</p>
+          ) : (
+            visible.map((line) => (
+              <LogLine
+                key={line.seq}
+                line={line}
+                source={source === 'all' ? names.get(line.processId) ?? line.processId : null}
+                pretty={pretty}
+              />
+            ))
+          )}
         </div>
-
-        {/* Only while detached: at the bottom there is nothing to jump to, and its absence is how
-            you can tell you are still following. */}
-        {!following && (
-          <button type="button" className="log-jump" onClick={() => setFollowing(true)}>
-            <Icon name="arrow-down" />
-            {behind > 0 ? `${behind.toLocaleString()} new` : 'Jump to latest'}
-          </button>
-        )}
       </div>
+
+      {!following && (
+        <button type="button" className="log-jump" onClick={() => setFollowing(true)}>
+          <Icon name="arrow-down" />
+          {behind > 0 ? `${behind.toLocaleString()} new` : 'Jump to latest'}
+        </button>
+      )}
+    </div>
+  );
+
+  if (embedded) {
+    return (
+      <div className="logs embedded" aria-label="Process output">
+        {toolbar}
+        {body}
+      </div>
+    );
+  }
+
+  return (
+    <section className="panel logs" aria-label="Process output">
+      {toolbar}
+      {body}
     </section>
   );
 }
