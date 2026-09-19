@@ -497,6 +497,49 @@ textarea {
 
 /* An action drawn as a row, the way the OS offers "Add" at the foot of a sidebar: quieter than the
    rows it adds to, and nothing like the page's primary button. */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 10px;
+  background: var(--field);
+  border: 0;
+  border-radius: var(--radius-control);
+  box-shadow: var(--field-edge);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: box-shadow 0.12s ease, color 0.12s ease;
+}
+
+.sidebar-search:hover {
+  color: var(--text);
+}
+
+.sidebar-search:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus);
+}
+
+.sidebar-search .icon {
+  flex: none;
+  color: var(--text-faint);
+}
+
+.sidebar-search-label {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.sidebar-search .command-kbd {
+  flex: none;
+  margin-left: auto;
+}
+
 .sidebar-add {
   width: 100%;
   background: none;
@@ -576,6 +619,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  overflow: visible;
 }
 
 .counts {
@@ -1423,18 +1467,26 @@ p.card-processes {
 
 /* The application page hands the canvas the window: it escapes the page's gutter, and the page
    itself stops scrolling — the surface pans instead, which is the whole point of it. */
-.main:has(.canvas-page) {
+.main:has(.app-workspace) {
   gap: 0;
   padding-bottom: 0;
   overflow: hidden;
 }
 
-.main > .canvas-page {
+.main > .app-workspace {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0 calc(var(--gutter) * -1);
+}
+
+.app-workspace > .canvas-page {
   position: relative;
   display: flex;
   flex: 1 1 0;
   min-height: 0;
-  margin: 0 calc(var(--gutter) * -1);
 }
 
 .canvas {
@@ -2759,7 +2811,8 @@ p.card-processes {
 
 .command-palette {
   width: min(560px, 100%);
-  max-height: min(70vh, 640px);
+  height: min(70vh, 640px);
+  min-height: 320px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2777,6 +2830,8 @@ p.card-processes {
 }
 
 .command-palette-search {
+  flex: none;
+  width: 100%;
   max-width: none;
   min-width: 0;
 }
@@ -2810,7 +2865,8 @@ p.card-processes {
 }
 
 .command-palette-list {
-  flex: 1 1 0;
+  flex: 1 1 auto;
+  min-height: 0;
   margin: 0;
   padding: 6px;
   overflow-y: auto;
@@ -2822,6 +2878,19 @@ p.card-processes {
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.command-palette-group {
+  margin: 0;
+  padding: 10px 12px 4px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-faint);
+  letter-spacing: 0.02em;
+}
+
+.command-palette-list > li:first-child .command-palette-group {
+  padding-top: 4px;
 }
 
 .command-row {
@@ -2883,6 +2952,10 @@ p.card-processes {
   white-space: nowrap;
 }
 
+.command-row.suggested .command-row-subtitle {
+  color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
+}
+
 .command-row-chevron {
   flex: none;
   color: var(--accent);
@@ -2908,19 +2981,6 @@ p.card-processes {
 
 .command-foot-toggle {
   margin-left: auto;
-}
-
-.sidebar-search {
-  width: 100%;
-  margin-top: 10px;
-  justify-content: flex-start;
-  color: var(--text-muted);
-  font-size: 12.5px;
-}
-
-.sidebar-search kbd {
-  margin-left: auto;
-  opacity: 0.75;
 }
 
 /* A sheet: the material, its title and buttons pinned while the fields scroll under them. */
@@ -3312,10 +3372,8 @@ p.card-processes {
   font-size: 11.5px;
 }
 
-/* A found cluster is a path plus what it is doing, and a terminal target is a process plus where it
-   runs, so each entry takes two lines of the list. */
-.cluster-option,
-.terminal-target {
+/* A found cluster is a path plus what it is doing — each entry takes two lines of the list. */
+.cluster-option {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
@@ -3344,31 +3402,524 @@ p.card-processes {
   color: var(--text-dim);
 }
 
-/* --- terminals ------------------------------------------------------------------------------- */
+/* --- menus ----------------------------------------------------------------------------------- */
 
-/* The same shell as the log viewer, because it is the same object: a full-window panel whose head
-   is a row of controls and whose body is the terminal's own ground. */
-.terminals {
-  min-height: 320px;
+.menu-anchor {
+  position: relative;
+  display: inline-flex;
 }
 
-.terminal-tabs {
-  max-width: min(100%, 560px);
+.menu-anchor .icon-button[aria-expanded='true'] {
+  background: var(--fill-selected);
+  color: var(--accent);
 }
 
-/* Where the active shell is standing. Cut rather than wrapped: a repository path is long, the head
-   is one line, and the title attribute has the whole of it. */
-.terminal-cwd {
-  max-width: min(40%, 420px);
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 280px;
+  max-width: min(360px, 90vw);
+  padding: var(--space-2);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-float), inset 0 0 0 1px var(--separator);
+}
+
+.menu-title {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu-section {
+  margin: 0;
+  padding: 0 var(--space-1);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 3px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--field);
+  border-radius: 7px;
+  box-shadow: var(--field-edge);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 4px 8px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  text-align: left;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.menu-item .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.menu-item:hover {
+  background: var(--fill-selected);
+}
+
+.menu-item:focus {
+  outline: none;
+}
+
+.menu-item:focus-visible {
+  background: var(--fill-selected);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.menu-note {
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.menu-note.danger {
+  color: var(--danger);
+}
+
+.menu-tag {
+  margin-left: 6px;
+  padding: 0 5px;
+  background: var(--fill-track);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+/* Terminal picker: a small panel with a head, section labels, and row cards — not a generic menu list. */
+.terminal-menu {
+  min-width: 300px;
+  max-width: min(420px, 92vw);
+  padding: 0;
+  gap: 0;
   overflow: hidden;
+}
+
+.terminal-menu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 11px;
+  border-bottom: 1px solid var(--separator);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.terminal-menu-head .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.terminal-menu-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: min(360px, 60vh);
+  padding: var(--space-2);
+  overflow-y: auto;
+}
+
+.terminal-menu-section h3 {
+  margin: 0 0 var(--space-1);
+  padding: 0 var(--space-1);
+  color: var(--text-faint);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.terminal-menu-section + .terminal-menu-section {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--separator);
+}
+
+.terminal-menu-section ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.terminal-menu-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 7px var(--space-2);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.terminal-menu-row:hover {
+  background: var(--fill-hover);
+}
+
+.terminal-menu-row:focus {
+  outline: none;
+}
+
+.terminal-menu-row:focus-visible {
+  background: var(--fill-selected);
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.terminal-menu-tile {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--icon-tile);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--rim);
+}
+
+.terminal-menu-tile.is-new {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px rgb(124 92 255 / 0.28);
+}
+
+.terminal-menu-tile.is-new .icon {
+  color: var(--accent);
+}
+
+.terminal-menu-tile .status {
+  font-size: 11px;
+}
+
+.terminal-menu-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.terminal-menu-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 550;
+}
+
+.terminal-menu-path {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--mono);
 }
 
-/* A shell that has exited keeps its tab so its output can still be read, and says so by going
-   quiet rather than by disappearing under the cursor of someone about to click it. */
-.tab-ended {
+.terminal-menu-badge {
+  padding: 0 5px;
+  background: var(--fill-track);
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+
+.terminal-menu-arrow,
+.terminal-menu-action {
+  flex: none;
+  color: var(--text-faint);
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.terminal-menu-row:hover .terminal-menu-arrow,
+.terminal-menu-row:focus-visible .terminal-menu-arrow,
+.terminal-menu-row:hover .terminal-menu-action,
+.terminal-menu-row:focus-visible .terminal-menu-action {
+  opacity: 1;
+}
+
+.terminal-menu-row.is-new:hover .terminal-menu-action,
+.terminal-menu-row.is-new:focus-visible .terminal-menu-action {
+  color: var(--accent);
+}
+
+.terminal-menu-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.terminal-menu-note.danger {
+  color: var(--danger);
+}
+
+/* --- terminals ------------------------------------------------------------------------------- */
+
+/* Docked under the canvas: the drawer sets the height, and the panel fills it. */
+.terminals {
+  flex: 1;
+  min-height: 0;
+}
+
+/* VS Code-style bottom panel: canvas stays above, drag the top edge to resize, Escape to dismiss. */
+.terminal-drawer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  overflow: hidden;
+  background: var(--glass);
+  border-top: 1px solid var(--separator);
+  animation: slide-up 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.terminal-drawer:focus {
+  outline: none;
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.terminal-drawer-resize {
+  flex: none;
+  position: relative;
+  height: 5px;
+  touch-action: none;
+  cursor: ns-resize;
+  background: transparent;
+}
+
+.terminal-drawer-resize::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 36px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+  opacity: 0.85;
+  transform: translate(-50%, -50%);
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+
+.terminal-drawer-resize:hover::after,
+.terminal-drawer-resize:active::after {
+  background: var(--accent);
+  opacity: 1;
+}
+
+.terminal-drawer .terminals {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.terminal-drawer .menu {
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+/* Docked header: flat VS Code-style bar — panel tab, active session name, actions on the right. */
+.terminal-drawer .terminal-head {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  min-height: 32px;
+  padding: 0 6px 0 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--separator);
+}
+
+.terminal-head-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.terminal-head-tab {
+  padding: 5px 10px;
+  border-radius: var(--radius-xs);
+  color: var(--text-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.terminal-head-tab.selected {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.terminal-head-session {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: var(--space-1);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.terminal-head-session .icon {
+  color: var(--text-faint);
+}
+
+.terminal-drawer .terminal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.terminal-drawer .terminal-head .btn.icon-button {
+  width: 24px;
+  height: 24px;
+}
+
+.terminal-drawer .terminal-head .menu-anchor .icon-button[aria-expanded='true'] {
+  background: var(--fill-hover);
+  color: var(--text-dim);
+}
+
+/* Drop the new-terminal menu into the shell area — upward was clipped by the drawer edge. */
+.terminal-drawer .menu-anchor .menu {
+  top: calc(100% + 4px);
+  bottom: auto;
+  z-index: 60;
+}
+
+.terminal-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-sessions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 152px;
+  overflow-y: auto;
+  background: var(--surface);
+  border-left: 1px solid var(--separator);
+}
+
+.terminal-session {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 10px;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  text-align: left;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.terminal-session:hover {
+  background: var(--fill-hover);
+  color: var(--text);
+}
+
+.terminal-session:focus {
+  outline: none;
+}
+
+.terminal-session:focus-visible {
+  background: var(--fill-hover);
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.terminal-session.selected {
+  background: var(--fill-selected);
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+
+.terminal-session .icon {
+  flex: none;
+  margin-top: 1px;
+  color: var(--text-faint);
+}
+
+.terminal-session.selected .icon {
+  color: var(--accent);
+}
+
+.terminal-session-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.terminal-session-name {
+  overflow: hidden;
+  font-size: 11.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-session-path {
+  overflow: hidden;
+  color: var(--text-faint);
+  font-family: var(--mono);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-session.ended .terminal-session-name {
   color: var(--text-faint);
   text-decoration: line-through;
 }
@@ -3385,7 +3936,11 @@ p.card-processes {
 .terminal-pane {
   position: absolute;
   inset: 0;
-  padding: 8px 0 8px 12px;
+  padding: 8px 0 0 12px;
+}
+
+.terminal-drawer .terminal-pane {
+  padding: 0 0 0 8px;
 }
 
 .terminal-screen {
@@ -3394,9 +3949,12 @@ p.card-processes {
 }
 
 /* xterm draws its own scrollbar track inside this; the panel's rounded corner would clip the last
-   column of cells without it. */
-.terminal-screen .xterm {
+   column of cells without it. xterm's own CSS defaults to black — match our terminal ground so a
+   sub-pixel gap under a fit row never reads as a bar. */
+.terminal-screen .xterm,
+.terminal-screen .xterm-viewport {
   height: 100%;
+  background-color: var(--terminal);
 }
 
 /* --- icons ----------------------------------------------------------------------------------- */
@@ -3427,7 +3985,8 @@ p.card-processes {
   .toast,
   .modal,
   .backdrop,
-  .drawer {
+  .drawer,
+  .terminal-drawer {
     animation: none;
   }
 
@@ -3463,7 +4022,7 @@ p.card-processes {
 
   /* The canvas still needs a window of its own to pan inside, and there is no page height left to
      take it from once everything is stacked. */
-  .main > .canvas-page {
+  .main > .app-workspace {
     flex: none;
     height: 78vh;
   }

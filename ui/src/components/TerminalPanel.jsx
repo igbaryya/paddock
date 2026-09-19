@@ -1,5 +1,6 @@
 /**
- * The terminals of one application: a tab per open shell, and the control that opens another.
+ * The terminals of one application: one shell on screen, the rest listed in a sidebar, and the
+ * control that opens another.
  *
  * Every terminal stays mounted, and only the chosen one is shown. That is the whole reason this
  * component exists rather than rendering one `Terminal` at a time: unmounting a tab would dispose
@@ -9,33 +10,44 @@
  * The sessions themselves belong to the manager and outlive this panel, so opening it lists what is
  * already running rather than starting anything. Closing the panel leaves every shell alone.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import EmptyState from './EmptyState.jsx';
 import Icon from './Icon.jsx';
 import IconButton from './IconButton.jsx';
-import Segmented from './Segmented.jsx';
 import Terminal from './Terminal.jsx';
-import TerminalTargetPicker from './TerminalTargetPicker.jsx';
+import TerminalMenu from './TerminalMenu.jsx';
 import { closeTerminal, listTerminals, openTerminal } from '../api.js';
 
-/** @param {{application: object}} props */
-export default function TerminalPanel({ application }) {
+/** @param {string} cwd */
+function cwdLeaf(cwd) {
+  const parts = cwd.split('/').filter(Boolean);
+  return parts.at(-1) ?? cwd;
+}
+
+/**
+ * @param {{application: object,
+ *          request?: {kind: 'session', sessionId: string}|{kind: 'new', processId: string}|null,
+ *          onRequestHandled?: () => void, onClose?: () => void}} props
+ */
+export default function TerminalPanel({ application, request = null, onRequestHandled, onClose }) {
   const [support, setSupport] = useState(null);
   const [targets, setTargets] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [chosen, setChosen] = useState(null);
-  const [picking, setPicking] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const menuAnchorRef = useRef(null);
+  const handledRequest = useRef(null);
 
   useEffect(() => {
+    handledRequest.current = null;
     const controller = new AbortController();
     listTerminals(application.id, controller.signal).then(
       (state) => {
         setSupport(state.support);
         setTargets(state.targets);
         setSessions(state.sessions);
-        // The last one opened is the one being come back to, the same as reopening a terminal app.
         setChosen(state.sessions.at(-1)?.id ?? null);
       },
       (err) => {
@@ -45,9 +57,22 @@ export default function TerminalPanel({ application }) {
     return () => controller.abort();
   }, [application.id]);
 
-  /** A tab can be closed, or reaped, out from under the choice; the choice is not corrected for
-      that, it is simply resolved against what is still open — the same way the log viewer's source
-      tab falls back when the process it named is deleted. */
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event) => {
+      if (menuAnchorRef.current?.contains(event.target)) return;
+      setMenuOpen(false);
+    };
+    // After the opening click finishes — attaching synchronously can swallow the first interaction.
+    const id = requestAnimationFrame(() => {
+      document.addEventListener('pointerdown', onPointerDown);
+    });
+    return () => {
+      cancelAnimationFrame(id);
+      document.removeEventListener('pointerdown', onPointerDown);
+    };
+  }, [menuOpen]);
+
   const forget = (sessionId) =>
     setSessions((open) => open.filter((session) => session.id !== sessionId));
 
@@ -57,7 +82,7 @@ export default function TerminalPanel({ application }) {
     );
 
   const open = async (processId) => {
-    setPicking(false);
+    setMenuOpen(false);
     setBusy(true);
     setError(null);
     try {
@@ -71,20 +96,33 @@ export default function TerminalPanel({ application }) {
     }
   };
 
-  /** One place to stand is not a choice; more than one is the question VS Code asks. */
-  const requestTerminal = () => {
-    setError(null);
-    if (targets.length === 1) return open(targets[0].processId);
-    setPicking(true);
-  };
+  useEffect(() => {
+    if (!request || support === null || !support.available) return;
+    const key = request.kind === 'session' ? `s:${request.sessionId}` : `n:${request.processId}`;
+    if (handledRequest.current === key) return;
+
+    if (request.kind === 'session') {
+      const match = sessions.find((session) => session.id === request.sessionId);
+      if (!match) {
+        // Initial session list has not arrived yet — try again on the next render.
+        if (sessions.length === 0) return;
+      } else {
+        setChosen(match.id);
+      }
+      handledRequest.current = key;
+      onRequestHandled?.();
+      return;
+    }
+
+    handledRequest.current = key;
+    open(request.processId).finally(() => onRequestHandled?.());
+  }, [request, support, sessions, onRequestHandled]);
 
   const close = async (sessionId) => {
-    // Dropped from the list first: the shell is going whatever the request says, and leaving a tab
-    // on screen until a round trip finishes makes the click feel like it missed.
+    const remaining = sessions.filter((session) => session.id !== sessionId);
+    if (chosen === sessionId) setChosen(remaining.at(-1)?.id ?? null);
     forget(sessionId);
-    await closeTerminal(sessionId).catch(() => {
-      // Already gone — reaped for being idle, or closed from another dashboard.
-    });
+    await closeTerminal(sessionId).catch(() => {});
   };
 
   if (error && support === null) {
@@ -100,43 +138,56 @@ export default function TerminalPanel({ application }) {
     );
   }
 
-  // Resolved, never stored: closing the tab that was chosen lands on whatever is still open.
   const active = sessions.find((session) => session.id === chosen) ?? sessions.at(-1) ?? null;
 
   return (
     <section className="panel terminals" aria-label="Terminals">
-      <div className="panel-head">
-        <h2 className="panel-title">
-          <Icon name="terminal" />
-          Terminal
-        </h2>
-        {sessions.length > 0 && (
-          <Segmented
-            className="terminal-tabs"
-            role="tablist"
-            label="Open terminals"
-            value={active?.id ?? ''}
-            onChange={setChosen}
-            options={sessions.map((session) => ({
-              id: session.id,
-              label: (
-                <span className={session.running === false ? 'tab-ended' : undefined}>
-                  {session.processName ?? 'Shell'}
-                </span>
-              ),
-            }))}
-          />
-        )}
-        <span className="spacer" />
+      <div className="panel-head terminal-head">
+        <div className="terminal-head-tabs" role="tablist" aria-label="Panel">
+          <span className="terminal-head-tab selected" role="tab" aria-selected="true">
+            Terminal
+          </span>
+        </div>
         {active && (
-          <span className="meta terminal-cwd" title={active.cwd}>
-            {active.cwd}
+          <span className="terminal-head-session">
+            <Icon name="terminal" size={14} />
+            <span>{active.processName ?? 'Shell'}</span>
           </span>
         )}
-        <IconButton icon="plus" label="New terminal" disabled={busy} onClick={requestTerminal} />
-        {active && (
-          <IconButton icon="trash" label="Close terminal" onClick={() => close(active.id)} />
-        )}
+        <span className="spacer" />
+        <div className="terminal-actions">
+          <div className="menu-anchor" ref={menuAnchorRef}>
+            <IconButton
+              icon="plus"
+              label="New terminal"
+              className="small ghost"
+              disabled={busy}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((was) => !was)}
+            />
+            {menuOpen && (
+              <TerminalMenu
+                applicationId={application.id}
+                showSessions={false}
+                onPickSession={() => {}}
+                onPickTarget={open}
+                onClose={() => setMenuOpen(false)}
+              />
+            )}
+          </div>
+          {active && (
+            <IconButton
+              icon="trash"
+              label="Close terminal"
+              className="small ghost"
+              onClick={() => close(active.id)}
+            />
+          )}
+          {onClose && (
+            <IconButton icon="close" label="Close panel" className="small ghost" onClick={onClose} />
+          )}
+        </div>
       </div>
 
       {error && (
@@ -147,46 +198,58 @@ export default function TerminalPanel({ application }) {
       )}
 
       {sessions.length === 0 ? (
-        <EmptyState
-          icon="terminal"
-          title="No terminal open"
-          action={
-            <button type="button" className="btn primary" disabled={busy} onClick={requestTerminal}>
-              <Icon name="plus" />
-              New terminal
-            </button>
-          }
-        >
-          A shell in one of this application&rsquo;s repositories, which keeps running while you
-          work elsewhere in the dashboard.
+        <EmptyState icon="terminal" title="No terminal open">
+          Use the terminal menu in the toolbar to pick a shell or open a new one in a repository.
         </EmptyState>
       ) : (
-        <div className="terminal-stack">
-          {sessions.map((session) => (
-            // `hidden` rather than unmounting: see the note at the top of this file.
-            <div
-              key={session.id}
-              className="terminal-pane"
-              role="tabpanel"
-              hidden={session.id !== active?.id}
-            >
-              <Terminal
-                sessionId={session.id}
-                active={session.id === active?.id}
-                onExit={() => markExited(session.id)}
-                onGone={() => forget(session.id)}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+        <div className="terminal-body">
+          <div className="terminal-stack">
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                className="terminal-pane"
+                role="tabpanel"
+                hidden={session.id !== active?.id}
+              >
+                <Terminal
+                  sessionId={session.id}
+                  active={session.id === active?.id}
+                  onExit={() => markExited(session.id)}
+                  onGone={() => {
+                    const remaining = sessions.filter((item) => item.id !== session.id);
+                    if (chosen === session.id) setChosen(remaining.at(-1)?.id ?? null);
+                    forget(session.id);
+                  }}
+                />
+              </div>
+            ))}
+          </div>
 
-      {picking && (
-        <TerminalTargetPicker
-          targets={targets}
-          onPick={open}
-          onClose={() => setPicking(false)}
-        />
+          <aside className="terminal-sessions" aria-label="Open terminals">
+            {sessions.map((session) => {
+              const selected = session.id === active?.id;
+              return (
+                <button
+                  key={session.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={`terminal-session${selected ? ' selected' : ''}${
+                    session.running === false ? ' ended' : ''
+                  }`}
+                  title={session.cwd}
+                  onClick={() => setChosen(session.id)}
+                >
+                  <Icon name="terminal" size={14} />
+                  <span className="terminal-session-copy">
+                    <span className="terminal-session-name">{session.processName ?? 'Shell'}</span>
+                    <span className="terminal-session-path">{cwdLeaf(session.cwd)}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </aside>
+        </div>
       )}
     </section>
   );

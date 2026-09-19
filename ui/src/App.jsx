@@ -354,6 +354,7 @@ export default function App() {
       <CommandPalette
         open={paletteOpen}
         commands={commands}
+        actionContext={{ applications, runApplication, runProcess, setIntent: setPaletteIntent }}
         onClose={() => setPaletteOpen(false)}
       />
     </div>

@@ -16,6 +16,7 @@ import ApplicationCanvas from '../components/ApplicationCanvas.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import LogViewer from '../components/LogViewer.jsx';
 import Modal from '../components/Modal.jsx';
+import TerminalDrawer from '../components/TerminalDrawer.jsx';
 import TerminalPanel from '../components/TerminalPanel.jsx';
 import { Link, paths } from '../router.jsx';
 
@@ -49,6 +50,8 @@ export default function ApplicationPage({
 }) {
   const [logsOpen, setLogsOpen] = useState(false);
   const [terminalOpen, setTerminalOpen] = useState(false);
+  /** @type {[{kind: 'session', sessionId: string}|{kind: 'new', processId: string}|null, Function]} */
+  const [terminalRequest, setTerminalRequest] = useState(null);
   const [drawerIntent, setDrawerIntent] = useState(null);
   // Both belong to this application: the tail would show the wrong processes' names over the new
   // application's lines, and the terminal panel would be listing another application's shells.
@@ -56,13 +59,18 @@ export default function ApplicationPage({
   useEffect(() => {
     setLogsOpen(false);
     setTerminalOpen(false);
+    setTerminalRequest(null);
     setDrawerIntent(null);
   }, [application?.id]);
 
   useEffect(() => {
     if (!application || !intent || intent.applicationId !== application.id) return;
     if (intent.kind === 'logs') setLogsOpen(true);
-    if (intent.kind === 'terminal') setTerminalOpen(true);
+    if (intent.kind === 'terminal') {
+      setTerminalOpen(true);
+      if (intent.sessionId) setTerminalRequest({ kind: 'session', sessionId: intent.sessionId });
+      else if (intent.processId) setTerminalRequest({ kind: 'new', processId: intent.processId });
+    }
     if (intent.kind === 'drawer' && intent.processId) {
       setDrawerIntent({ kind: 'process', processId: intent.processId });
     }
@@ -93,46 +101,50 @@ export default function ApplicationPage({
         onEdit={onEdit}
         onAddProcess={onAddProcess}
         onOpenLogs={() => setLogsOpen(true)}
-        onOpenTerminal={() => setTerminalOpen(true)}
+        onTerminalChoose={(choice) => {
+          setTerminalRequest(choice);
+          setTerminalOpen(true);
+        }}
       />
 
       {/* Keyed by application: the canvas holds the arrangement and the selection, and both belong
           to one application — carrying either across a switch would show the wrong thing. */}
-      <ApplicationCanvas
-        key={application.id}
-        application={application}
-        favicons={favicons}
-        logs={logs}
-        busy={busy}
-        staleProcesses={staleProcesses}
-        drawerIntent={drawerIntent}
-        onDrawerIntentHandled={() => setDrawerIntent(null)}
-        onSaveLayout={onSaveLayout}
-        onClearLogs={onClearLogs}
-        onEdit={onEdit}
-        onDelete={onDelete}
-        onAddProcess={onAddProcess}
-        onProcessAction={onProcessAction}
-        onEditProcess={onEditProcess}
-        onDeleteProcess={onDeleteProcess}
-        onEditPostgres={onEditPostgres}
-      />
+      <div className="app-workspace">
+        <ApplicationCanvas
+          key={application.id}
+          application={application}
+          favicons={favicons}
+          logs={logs}
+          busy={busy}
+          staleProcesses={staleProcesses}
+          drawerIntent={drawerIntent}
+          onDrawerIntentHandled={() => setDrawerIntent(null)}
+          onSaveLayout={onSaveLayout}
+          onClearLogs={onClearLogs}
+          onEdit={onEdit}
+          onDelete={onDelete}
+          onAddProcess={onAddProcess}
+          onProcessAction={onProcessAction}
+          onEditProcess={onEditProcess}
+          onDeleteProcess={onDeleteProcess}
+          onEditPostgres={onEditPostgres}
+        />
+
+        {terminalOpen && (
+          <TerminalDrawer onClose={() => setTerminalOpen(false)}>
+            <TerminalPanel
+              application={application}
+              request={terminalRequest}
+              onRequestHandled={() => setTerminalRequest(null)}
+              onClose={() => setTerminalOpen(false)}
+            />
+          </TerminalDrawer>
+        )}
+      </div>
 
       {logsOpen && (
         <Modal title={`${application.name} logs`} size="full" onClose={() => setLogsOpen(false)}>
           <LogViewer application={application} logs={logs} onClear={onClearLogs} />
-        </Modal>
-      )}
-
-      {/* Full, like the logger and for the same reason: a terminal in a 600px sheet is a terminal
-          nobody can read a stack trace in. */}
-      {terminalOpen && (
-        <Modal
-          title={`${application.name} terminal`}
-          size="full"
-          onClose={() => setTerminalOpen(false)}
-        >
-          <TerminalPanel application={application} />
         </Modal>
       )}
     </>

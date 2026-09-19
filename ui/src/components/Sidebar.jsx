@@ -41,12 +41,13 @@ export default function Sidebar({ applications, route, connection, portCount, on
           <span className="sr-only">Connection: </span>
           {CONNECTION_LABEL[connection]}
         </span>
-        <button type="button" className="nav-item sidebar-search" onClick={onOpenPalette}>
-          <Icon name="search" />
-          Search…
-          <kbd className="command-kbd">{MOD_LABEL}K</kbd>
-        </button>
       </div>
+
+      <button type="button" className="sidebar-search" onClick={onOpenPalette}>
+        <Icon name="search" size={15} />
+        <span className="sidebar-search-label">Search…</span>
+        <kbd className="command-kbd">{MOD_LABEL}K</kbd>
+      </button>
 
       <ul className="nav-list">
         <li>

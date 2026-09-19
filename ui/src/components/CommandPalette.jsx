@@ -6,16 +6,16 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import Icon from './Icon.jsx';
-import { filterCommands } from '../commands.js';
+import { parseFlexibleQuery, pickPreferredCommandIndex, resolveCommands } from '../commands.js';
 
 const MOD_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
   ? '⌘'
   : 'Ctrl';
 
 /**
- * @param {{open: boolean, commands: object[], onClose: () => void}} props
+ * @param {{open: boolean, commands: object[], actionContext: object|null, onClose: () => void}} props
  */
-export default function CommandPalette({ open, commands, onClose }) {
+export default function CommandPalette({ open, commands, actionContext, onClose }) {
   const titleId = useId();
   const inputRef = useRef(null);
   const listRef = useRef(null);
@@ -25,7 +25,8 @@ export default function CommandPalette({ open, commands, onClose }) {
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
 
-  const filtered = filterCommands(commands, query);
+  const filtered = resolveCommands(commands, query, actionContext);
+  const actionMode = parseFlexibleQuery(query).mode !== 'search';
 
   useEffect(() => {
     if (!open) return;
@@ -35,7 +36,7 @@ export default function CommandPalette({ open, commands, onClose }) {
   }, [open]);
 
   useEffect(() => {
-    setActive(0);
+    setActive(pickPreferredCommandIndex(filtered));
   }, [query]);
 
   useEffect(() => {
@@ -64,6 +65,11 @@ export default function CommandPalette({ open, commands, onClose }) {
   const clampedActive = filtered.length ? Math.min(active, filtered.length - 1) : 0;
 
   const run = (command) => {
+    if (command.completeOnly && command.completion) {
+      setQuery(command.completion);
+      inputRef.current?.focus();
+      return;
+    }
     command.run();
     onClose();
   };
@@ -79,6 +85,14 @@ export default function CommandPalette({ open, commands, onClose }) {
       event.preventDefault();
       if (!filtered.length) return;
       setActive((index) => (index - 1 + filtered.length) % filtered.length);
+      return;
+    }
+    if (event.key === 'Tab') {
+      const command = filtered[clampedActive];
+      if (command?.completion) {
+        event.preventDefault();
+        setQuery(command.completion);
+      }
       return;
     }
     if (event.key === 'Enter') {
@@ -112,7 +126,7 @@ export default function CommandPalette({ open, commands, onClose }) {
               ref={inputRef}
               type="search"
               className="search command-palette-input"
-              placeholder="Search pages, actions…"
+              placeholder="Search, restart console, or appna console…"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={onInputKeyDown}
@@ -135,19 +149,28 @@ export default function CommandPalette({ open, commands, onClose }) {
           aria-label="Commands"
         >
           {filtered.length === 0 ? (
-            <li className="command-palette-empty">No matches.</li>
+            <li className="command-palette-empty">
+              {actionMode ? 'No matching services.' : 'No matches.'}
+            </li>
           ) : (
             filtered.map((command, index) => {
               const selected = index === clampedActive;
+              const showGroup =
+                command.group && (index === 0 || filtered[index - 1].group !== command.group);
               return (
                 <li key={command.id} role="none">
+                  {showGroup && (
+                    <p className="command-palette-group" role="presentation">
+                      {command.group}
+                    </p>
+                  )}
                   <button
                     type="button"
                     id={`command-${command.id}`}
                     role="option"
                     aria-selected={selected}
                     data-active={selected ? 'true' : undefined}
-                    className={`command-row${selected ? ' active' : ''}`}
+                    className={`command-row${selected ? ' active' : ''}${command.suggested ? ' suggested' : ''}`}
                     onMouseEnter={() => setActive(index)}
                     onClick={() => run(command)}
                   >
@@ -176,6 +199,12 @@ export default function CommandPalette({ open, commands, onClose }) {
             <kbd className="command-kbd">↵</kbd>
             to select
           </span>
+          {actionMode && (
+            <span className="command-foot-hint">
+              <kbd className="command-kbd">Tab</kbd>
+              to complete
+            </span>
+          )}
           <span className="command-foot-hint command-foot-toggle">
             <kbd className="command-kbd">{MOD_LABEL} K</kbd>
             to toggle

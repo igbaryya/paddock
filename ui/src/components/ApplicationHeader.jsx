@@ -7,11 +7,12 @@
  * Delete a deliberate click away from its Stop, rather than beside it. The log of every process at
  * once is the one exception: it is the whole application's output, so it is a control on this bar.
  * A terminal is the same case — it opens in one of the application's repositories, and which one
- * is a question the panel asks, not something a single card owns.
+ * is chosen from the dropdown beside the lifecycle controls, not from a single card.
  */
 import StatusDot from './StatusDot.jsx';
 import IconButton from './IconButton.jsx';
 import AppIcon from './AppIcon.jsx';
+import TerminalButton from './TerminalButton.jsx';
 import Toolbar from './Toolbar.jsx';
 import { paths } from '../router.jsx';
 
@@ -35,7 +36,8 @@ function Summary({ application }) {
  * @param {{application: object, favicons: Record<string, object>, busy: boolean,
  *          onAction: (action: string) => void, onEdit: () => void,
  *          onAddProcess: () => void, onOpenLogs: () => void,
- *          onOpenTerminal: () => void}} props
+ *          onTerminalChoose: (choice: {kind: 'session', sessionId: string} |
+ *                                     {kind: 'new', processId: string}) => void}} props
  */
 export default function ApplicationHeader({
   application,
@@ -45,7 +47,7 @@ export default function ApplicationHeader({
   onEdit,
   onAddProcess,
   onOpenLogs,
-  onOpenTerminal,
+  onTerminalChoose,
 }) {
   // A PostgreSQL application's one process comes from its settings, so there is nothing to add.
   const postgres = application.kind === 'postgres';
@@ -71,9 +73,8 @@ export default function ApplicationHeader({
         <IconButton icon="stop" label="Stop all" disabled={busy} onClick={() => onAction('stop')} />
         <IconButton icon="restart" label="Restart all" disabled={busy} onClick={() => onAction('restart')} />
       </span>
-      {/* Beside the lifecycle controls rather than with the configuration ones: a terminal is
-          something you do to a running application, not something you change about it. */}
-      <IconButton icon="terminal" label="Open terminal" onClick={onOpenTerminal} />
+      {/* Beside the lifecycle controls: pick which shell to show or where to open a new one. */}
+      <TerminalButton applicationId={application.id} onChoose={onTerminalChoose} />
       <IconButton icon="logs" label="Open logs" onClick={onOpenLogs} />
       <span className="button-group" role="group" aria-label="Configuration">
         {!postgres && <IconButton icon="plus" label="Add process" onClick={onAddProcess} />}
