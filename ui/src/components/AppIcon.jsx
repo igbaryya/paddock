@@ -34,7 +34,7 @@ function Placeholder({ application }) {
  * Decorative: the name beside it already says what the application is, so the images have no alt
  * text and the process names ride on the tooltip instead.
  * @param {{application: object, favicons: Record<string, {dataUrl: string}>,
- *          size?: 'md'|'lg'}} props
+ *          size?: 'sm'|'md'|'lg'}} props
  */
 export default function AppIcon({ application, favicons, size = 'lg' }) {
   const [primary, secondary] = iconsOf(application, favicons);

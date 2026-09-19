@@ -143,6 +143,31 @@ export const PORT_SCAN_INTERVAL_MS = intFromEnv('PADDOCK_PORT_SCAN_INTERVAL_MS',
 /** Grace an unmanaged process gets between the polite signal and the forced one. */
 export const PORT_STOP_GRACE_MS = intFromEnv('PADDOCK_PORT_STOP_GRACE_MS', 5_000);
 
+/**
+ * The dashboard's terminal. Off is a real choice and not a hypothetical one: this is the only
+ * feature that hands an interactive shell to anything over HTTP, and a machine where that is not
+ * wanted should be able to refuse it outright rather than trust the UI never to offer it.
+ */
+export const TERMINAL_ENABLED = boolFromEnv('PADDOCK_TERMINAL_ENABLED', true);
+
+/**
+ * How much of a terminal's output is kept for replay. A reloaded dashboard is reconnecting to a
+ * shell that has been running without it, and a session with nothing to replay comes back blank —
+ * with the prompt the shell already printed lost, so it looks hung until the user presses Enter.
+ * Bytes rather than lines: one `cat` of a minified bundle is a single line of several megabytes.
+ */
+export const TERMINAL_SCROLLBACK_BYTES = intFromEnv('PADDOCK_TERMINAL_SCROLLBACK_BYTES', 262_144);
+
+/** Every session is a live shell holding memory and a pty; a runaway opener must hit a ceiling. */
+export const TERMINAL_MAX_SESSIONS = intFromEnv('PADDOCK_TERMINAL_MAX_SESSIONS', 12);
+
+/**
+ * How long a session outlives the last dashboard watching it. Long enough that a reload, a crashed
+ * tab or a laptop lid keeps the shell and its scrollback; short enough that a closed browser does
+ * not leave shells running for the rest of the week.
+ */
+export const TERMINAL_IDLE_TIMEOUT_MS = intFromEnv('PADDOCK_TERMINAL_IDLE_TIMEOUT_MS', 900_000);
+
 /** How long one statement from a database tool may run before PostgreSQL cancels it. */
 export const PG_STATEMENT_TIMEOUT_MS = intFromEnv('PADDOCK_PG_STATEMENT_TIMEOUT_MS', 15_000);
 

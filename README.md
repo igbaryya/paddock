@@ -142,7 +142,8 @@ release up from the public API — no extra workflow step.
 
 The site itself is `site/`, published by [.github/workflows/pages.yml](.github/workflows/pages.yml)
 to GitHub Pages. Preview locally with any static server on that folder. The first deploy needs
-**Settings → Pages → Source: GitHub Actions**.
+**Settings → Pages → Source: GitHub Actions**. Its `favicon.svg` and `apple-touch-icon.png` are
+rendered from the dashboard's mark by `npm --prefix desktop run icons`, like every other icon.
 
 **Signing.** Unsigned builds work locally, but Gatekeeper and SmartScreen block them on anyone else's
 machine. On macOS, every rebuild also looks like a new app to the privacy prompts, and an unsigned app
@@ -182,7 +183,7 @@ Four routes, all real URLs — a project page is worth pasting into a ticket, an
 | Route | |
 | --- | --- |
 | `/` | Every application as a card: status, its processes, the ports it holds |
-| `/applications/:id` | One application in full — controls, process detail, live logs, and a SQL console for PostgreSQL |
+| `/applications/:id` | One application in full — controls, process detail, live logs, an interactive terminal, and a SQL console for PostgreSQL |
 | `/ports` | Every listening port on the machine, filterable, with its owner |
 | `/settings` | Start Paddock at login, which applications start with it, and where this copy lives |
 
@@ -205,6 +206,25 @@ working directory if you set one, the repository root otherwise — the form off
 `package.json` scripts as the command, and its `.env` files as the environment. Every one of those is a click, not a default: the
 scripts fill the Command field, loading a `.env` adds the variables it does not already have and
 leaves the ones you have overridden exactly as you typed them.
+
+### Terminal
+
+Each application page has an **Open terminal** control beside Start / Stop / Restart. It opens a
+full-window panel with a real shell (via `node-pty` and xterm.js), not an external Terminal.app
+window.
+
+When an application has more than one process — or more than one distinct working directory — opening
+a terminal asks which one, the same way VS Code asks which workspace folder when a multi-root
+workspace has several roots. The choice is always a **process**, never a path: the manager resolves
+the directory from the registered configuration, using the same `workingDirectory` / `repositoryPath`
+rule the spawn path uses.
+
+Sessions stay open while you work elsewhere in the dashboard. Tabs let you switch between open shells
+without losing their scrollback. Closing the panel does not kill the shells; they are reaped after
+nobody has been watching them for a while, or when you close a tab explicitly.
+
+There is no MCP tool for terminals. Set `PADDOCK_TERMINAL_ENABLED=false` to turn the feature off
+entirely.
 
 ## PostgreSQL applications
 
@@ -450,6 +470,21 @@ One sequence counter spans every process, so a single cursor works for one proce
 application-wide read. A cursor older than the oldest buffered line comes back with `dropped: true`
 rather than silently skipping.
 
+Because the escapes are gone by the time a line is stored, the viewer's colour is inferred from the
+text rather than replayed from the process: a JSON record is parsed and painted by key and value
+type, prose is painted by level word, number and URL. A line is tinted by the level it reports —
+read from the record's own `level`/`severity` field, including pino's and syslog's numeric ones, or
+from a tag at the head of a prose line — which is not the same as the stream it arrived on, since
+plenty of dev servers report their own failures on stdout. **Pretty** reprints a record over several
+lines and unescapes the strings inside it, so an embedded stack trace can be read as one; that
+output is deliberately no longer valid JSON.
+
+The tail follows the live end by default and keeps following even once the in-memory buffer is full
+— autoscroll is keyed on the newest sequence number, not the line count, because the count stops
+moving once the cap is reached. Scroll up to read history and a floating pill appears with how much
+has arrived since; click it to return to the bottom. Off-screen lines use `content-visibility` so a
+full buffer does not lay out every row on every incoming batch.
+
 ## Configuration
 
 | Variable | Default |
@@ -468,6 +503,10 @@ rather than silently skipping.
 | `PADDOCK_PORT_STOP_GRACE_MS` | `5000` |
 | `PADDOCK_PG_STATEMENT_TIMEOUT_MS` | `15000` — per statement from a database tool |
 | `PADDOCK_PG_CONNECT_TIMEOUT_MS` | `5000` |
+| `PADDOCK_TERMINAL_ENABLED` | `true` — set `false` to disable interactive terminals |
+| `PADDOCK_TERMINAL_SCROLLBACK_BYTES` | `262144` — replay buffer per session |
+| `PADDOCK_TERMINAL_MAX_SESSIONS` | `12` |
+| `PADDOCK_TERMINAL_IDLE_TIMEOUT_MS` | `900000` (15 min) — reap when nobody is watching |
 | `PADDOCK_ENV_FILE` | `.env` beside the server; `paddock.env` in the desktop app's folder |
 
 Data lives in `%APPDATA%\paddock` on Windows, `~/Library/Application Support/paddock` on macOS, and
@@ -503,6 +542,11 @@ privileged capability, and the boundaries are deliberate:
   supplies.
 - Browse opens the OS folder dialog *from the server process* — a browser never gives a page an
   absolute path — which is only sound because the server is loopback-only. It is not an MCP tool.
+- The dashboard terminal is the one capability that hands out an interactive shell. It is
+  dashboard-only, behind the same loopback and origin guard as the rest of `/api`, and there is no
+  MCP tool for it. A request names a process id, never a directory — the server resolves the working
+  directory from the application's registered configuration, so a caller cannot ask for a shell
+  somewhere the application was never registered. Set `PADDOCK_TERMINAL_ENABLED=false` to turn it off.
 - The Add-process form can browse the filesystem and read a directory's `package.json` and `.env`.
   The request names a *directory*; which files inside it may be read is the server's decision, never
   the caller's, so there is no path a client can pass that reads an arbitrary file. Loading a `.env`

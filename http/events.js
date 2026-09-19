@@ -1,14 +1,11 @@
 /**
  * The SSE hub: one subscription to the service event emitter, fanned out to every open dashboard.
  *
- * Shaped by three constraints. The manager must still be able to exit, so there is exactly one
- * shared `.unref()`'d ping timer for the whole hub rather than one per client. A dev server can
- * emit thousands of lines a second, so log events are coalesced into ~50 ms batches instead of one
- * frame per line. And a client that stops reading buffers without limit in the kernel and in
- * `res.writableLength`, so it is dropped rather than allowed to grow the heap overnight.
- *
- * Wire format: `event: <type>` + a single JSON `data:` line + a blank line. The payload is always
- * `JSON.stringify`d, which is what guarantees multi-line log text cannot break framing.
+ * The transport — headers, framing, dropping a stalled reader, the shared keep-alive — is
+ * `sse.js`, and is the same one a terminal's output streams over. What is left here is the part
+ * that is the hub's own: a dev server can emit thousands of lines a second, so log events are
+ * coalesced into ~50 ms batches instead of one frame per line, and every frame goes to every open
+ * dashboard rather than to one client.
  *
  * Payloads, as the UI must read them:
  *   `status`        `{applicationId, processId, state}` — forwarded verbatim
@@ -20,46 +17,24 @@
  */
 import { events as serviceEvents } from '../service.js';
 import * as service from '../service.js';
+import * as sse from './sse.js';
 import { PORT_SCAN_INTERVAL_MS } from '../config.js';
 
-const PING_INTERVAL_MS = 25_000;
 const LOG_BATCH_MS = 50;
 const MAX_BATCH_ENTRIES = 500;
-const MAX_BUFFERED_BYTES = 1_048_576;
 
 /** @type {Set<import('node:http').ServerResponse>} */
 const clients = new Set();
 
-let pingTimer = null;
+let started = false;
 let logTimer = null;
 let portTimer = null;
 let lastPortFingerprint = null;
 let pendingLogs = [];
 
-const frame = (type, payload) => `event: ${type}\ndata: ${JSON.stringify(payload)}\n\n`;
-
-/** 'close' fires for both a disconnect and a normal end, and 'error' can fire alongside it. */
-function remove(res) {
-  if (!clients.delete(res)) return;
-  res.destroy();
-}
-
-/** A stalled reader shows up as a growing write buffer; drop it before it becomes a leak. */
-function write(res, chunk) {
-  if (res.writableEnded || res.destroyed) {
-    remove(res);
-    return;
-  }
-  if (res.writableLength > MAX_BUFFERED_BYTES) {
-    remove(res);
-    return;
-  }
-  res.write(chunk);
-}
-
 function broadcast(type, payload) {
-  const chunk = frame(type, payload);
-  for (const res of clients) write(res, chunk);
+  const chunk = sse.frame(type, payload);
+  for (const res of clients) sse.write(res, chunk);
 }
 
 function flushLogs() {
@@ -104,10 +79,6 @@ const onApplications = (event) => {
   if (clients.size) broadcast('applications', event ?? {});
 };
 
-const ping = () => {
-  for (const res of clients) write(res, ': ping\n\n');
-};
-
 /**
  * Port state changes without anything telling us, so it is the one thing here that has to be
  * polled. It is polled ONCE on the server, gated on someone actually watching, rather than by each
@@ -136,35 +107,18 @@ async function scanPorts() {
  * @param {import('node:http').ServerResponse} res
  */
 export function handleEvents(req, res) {
-  if (req.method !== 'GET') {
-    res.writeHead(405, { Allow: 'GET', 'Content-Length': 0 });
-    res.end();
-    return;
-  }
-
-  res.writeHead(200, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache, no-transform',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
-
+  if (sse.rejectNonGet(req, res)) return;
   clients.add(res);
-  res.on('close', () => remove(res));
-  res.on('error', () => remove(res));
-
-  // A comment frame flushes the headers so EventSource fires `onopen` without waiting for traffic.
-  write(res, ': connected\n\n');
+  sse.open(res, () => clients.delete(res));
 }
 
-/** Subscribe to the service emitter and start the single shared keep-alive timer. */
+/** Subscribe to the service emitter and start the port scan. */
 export function start() {
-  if (pingTimer) return;
+  if (started) return;
+  started = true;
   serviceEvents.on('status', onStatus);
   serviceEvents.on('log', onLog);
   serviceEvents.on('applications', onApplications);
-  pingTimer = setInterval(ping, PING_INTERVAL_MS);
-  pingTimer.unref();
   // 0 turns background scanning off entirely; the ports view then updates only when asked.
   if (PORT_SCAN_INTERVAL_MS > 0) {
     portTimer = setInterval(scanPorts, PORT_SCAN_INTERVAL_MS);
@@ -172,14 +126,13 @@ export function start() {
   }
 }
 
-/** Unsubscribe, cancel both timers, and close every stream cleanly for shutdown. */
+/** Unsubscribe, cancel the timers, and close every stream cleanly for shutdown. */
 export function stop() {
+  started = false;
   serviceEvents.off('status', onStatus);
   serviceEvents.off('log', onLog);
   serviceEvents.off('applications', onApplications);
 
-  clearInterval(pingTimer);
-  pingTimer = null;
   clearInterval(portTimer);
   portTimer = null;
   lastPortFingerprint = null;
@@ -187,6 +140,6 @@ export function stop() {
   logTimer = null;
   pendingLogs = [];
 
-  for (const res of clients) res.end();
+  for (const res of [...clients]) sse.end(res);
   clients.clear();
 }

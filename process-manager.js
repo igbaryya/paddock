@@ -15,18 +15,16 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { RUNTIME_FILE, STOP_GRACE_MS, START_SETTLE_MS, REAP_ORPHANS } from './config.js';
+import { RUNTIME_FILE, START_SETTLE_MS, REAP_ORPHANS } from './config.js';
 import {
-  shellInvocation, spawnOptions, signalTree, killTreeSync, treeAlive, describeLeader,
-  loginShellPath,
+  shellInvocation, spawnOptions, killTreeSync, treeAlive, describeLeader, loginShellPath,
 } from './platform/index.js';
+import { awaitGroupGone, killGroup, usablePid } from './process-group.js';
 import { append } from './log-store.js';
 import { createLineSplitter } from './line-splitter.js';
 
-const GROUP_POLL_MS = 100;
 const EXIT_FLUSH_MS = 50;
 const EXIT_DRAIN_MS = 500;
-const KILL_WAIT_MS = 10_000;
 const LINGER_POLL_MS = 1_000;
 const LOGIN_PATH_TIMEOUT_MS = 3_000;
 /** A process lock key is `appId:procId`, so a key without a colon cannot collide with one. */
@@ -45,8 +43,6 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const keyOf = (applicationId, processId) => `${applicationId}:${processId}`;
 const nowIso = () => new Date().toISOString();
 const isActiveStatus = (status) => ACTIVE.has(status);
-/** `process.kill(0, …)` addresses our own group, so a probe needs a genuine pid first. */
-const usablePid = (pid) => Number.isInteger(pid) && pid > 0;
 const warn = (message, err) =>
   console.error(`[paddock] ${message}${err ? `: ${err.message ?? err}` : ''}`);
 
@@ -183,31 +179,6 @@ function emitLine(rec, generation, stream, message) {
 }
 
 // --- process group operations --------------------------------------------------------------
-
-/**
- * Poll the group until it is gone. The probe — not any child event — is what "stopped" means.
- * @param {number|null} pgid
- * @param {number} timeoutMs
- * @returns {Promise<boolean>} true when the group is confirmed gone
- */
-async function awaitGroupGone(pgid, timeoutMs) {
-  if (!usablePid(pgid)) return true;
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (!treeAlive(pgid)) return true;
-    if (Date.now() >= deadline) return false;
-    await sleep(GROUP_POLL_MS);
-  }
-}
-
-/** SIGTERM, poll, escalate to SIGKILL at the grace deadline, keep polling (FINDINGS B5). */
-async function killGroup(pgid) {
-  if (!usablePid(pgid)) return true;
-  await signalTree(pgid, { force: false });
-  if (await awaitGroupGone(pgid, STOP_GRACE_MS)) return true;
-  await signalTree(pgid, { force: true });
-  return awaitGroupGone(pgid, KILL_WAIT_MS);
-}
 
 /** Drop our claim on a group that is gone: the pgid and its orphan-reaper record go together. */
 function releaseGroup(rec) {

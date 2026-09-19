@@ -1,5 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Same mark as ui/public/favicon.svg  keep them in step. -->
+  <!-- The product mark: a P, and the green dot everything running in the dashboard carries — Paddock,
+       live. The dot sits on the P's baseline like a full stop, clear of the bowl, so the two still read
+       apart at 16px. The corner radius is Apple's icon grid (22.5%). This file is the source for every
+       rendered icon: the tab, the sidebar, and desktop/scripts/render-icons.js. -->
   <defs>
     <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#232c3d"/>

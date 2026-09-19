@@ -7,6 +7,7 @@
  */
 import * as applications from './applications.js';
 import * as manager from './process-manager.js';
+import * as terminals from './terminal-manager.js';
 import * as logStore from './log-store.js';
 import * as ports from './ports.js';
 import * as workspace from './workspace.js';
@@ -334,6 +335,9 @@ export async function deleteApplication(applicationId) {
   const removed = await applications.deleteApplication(applicationId);
   for (const proc of processesOf(config)) discardRuntime(config, proc);
   await pool.closeApplication(config.id);
+  // A terminal outlives the dashboard that opened it, but not the application it was opened in:
+  // its directory is one this manager no longer knows anything about.
+  await terminals.closeApplication(config.id);
   return applicationView(removed);
 }
 
@@ -872,6 +876,143 @@ export async function updateSettings(patch) {
   return getSettings();
 }
 
+// --- terminals -----------------------------------------------------------------------------
+
+/**
+ * Re-exported so the SSE layer can follow one session's output without reaching past this facade,
+ * the same reason the runtime emitter is. Kept separate from `events`: a pty emits raw bytes at a
+ * rate a `cat` of a large file sets, and the dashboard-wide hub coalesces and fans out to every
+ * open tab — a terminal's output belongs to the one client watching it.
+ */
+export const terminalEvents = terminals.events;
+
+/**
+ * Where a terminal may be opened for this application: one entry per distinct directory, each
+ * named after a process that runs there.
+ *
+ * `effectiveCwd` is the same helper the spawn path uses, so a terminal always lands exactly where
+ * the dev server would — a process with a `workingDirectory` inside its repository opens there,
+ * not at the repository root. Deduped by directory, because two processes sharing one repository
+ * are one place to stand, and being asked to choose between identical options is not a choice.
+ * @param {object} config an ApplicationConfig
+ */
+function terminalTargets(config) {
+  const byDirectory = new Map();
+  for (const proc of processesOf(config)) {
+    const cwd = effectiveCwd(proc);
+    if (!cwd || byDirectory.has(cwd)) continue;
+    byDirectory.set(cwd, { processId: proc.id, processName: proc.name, cwd });
+  }
+  return [...byDirectory.values()];
+}
+
+/**
+ * The terminal panel's one read: whether this installation can open a shell, where it may be
+ * opened, and what is already open.
+ * @param {string} applicationId
+ */
+export async function listTerminals(applicationId) {
+  const config = await applications.getApplication(applicationId);
+  return {
+    support: await terminals.support(),
+    targets: terminalTargets(config),
+    sessions: terminals.list(applicationId),
+  };
+}
+
+/**
+ * Open a shell for this application.
+ *
+ * The caller names a process, never a directory. Resolving it here is the whole security boundary:
+ * a request cannot ask for a shell somewhere this application was never registered, which is the
+ * same rule that keeps a process's working directory inside its repository. An application with
+ * exactly one place to stand may omit the process id — that is the case where the dashboard does
+ * not ask.
+ * @param {string} applicationId
+ * @param {{processId?: string, cols?: number, rows?: number}} input
+ */
+export async function openTerminal(applicationId, input = {}) {
+  const config = await applications.getApplication(applicationId);
+  const { available, reason } = await terminals.support();
+  if (!available) throw new applications.ValidationError(`cannot open a terminal: ${reason}`);
+
+  const { full, open, limit } = terminals.capacity();
+  if (full) {
+    throw new applications.ValidationError(
+      `${open} terminals are already open, which is the limit (${limit}) — close one first`
+    );
+  }
+
+  const targets = terminalTargets(config);
+  if (targets.length === 0) {
+    throw new applications.ValidationError(
+      `'${config.name}' has no process to open a terminal in — add one first`
+    );
+  }
+  const target = input.processId
+    ? targets.find((candidate) => candidate.processId === input.processId)
+    : targets[0];
+  if (!target) {
+    // Either the id is not this application's, or it names a process whose directory another
+    // process was listed for. Both mean "not one of the choices you were given".
+    throw new applications.NotFoundError(
+      `No terminal target ${input.processId} in application ${config.id}`
+    );
+  }
+
+  return terminals.open({
+    applicationId: config.id,
+    processId: target.processId,
+    processName: target.processName,
+    cwd: target.cwd,
+    cols: input.cols,
+    rows: input.rows,
+  });
+}
+
+/** @param {string} sessionId @throws NotFoundError when no session has that id */
+const assertTerminal = (sessionId, found) => {
+  if (!found) throw new applications.NotFoundError(`No terminal ${sessionId}`);
+};
+
+/** @param {string} sessionId @returns {object} the session view */
+export function getTerminal(sessionId) {
+  const session = terminals.get(sessionId);
+  assertTerminal(sessionId, session);
+  return session;
+}
+
+/** @param {string} sessionId @param {string} data the keystrokes, verbatim */
+export function writeTerminal(sessionId, data) {
+  if (typeof data !== 'string') {
+    throw new applications.ValidationError('data must be a string of input for the terminal');
+  }
+  assertTerminal(sessionId, terminals.write(sessionId, data));
+}
+
+/** @param {string} sessionId @param {number} cols @param {number} rows */
+export function resizeTerminal(sessionId, cols, rows) {
+  assertTerminal(sessionId, terminals.resize(sessionId, cols, rows));
+}
+
+/** @param {string} sessionId */
+export async function closeTerminal(sessionId) {
+  assertTerminal(sessionId, await terminals.close(sessionId));
+}
+
+/**
+ * Follow one session. Handed straight through: the SSE layer needs the replay and the live stream
+ * as one subscription, and nothing about that is a view this facade should be rebuilding.
+ * @param {string} sessionId
+ * @param {{onData: (chunk: string) => void, onExit: (event: object) => void}} listener
+ * @returns {() => void} unsubscribe
+ */
+export function followTerminal(sessionId, listener) {
+  const unsubscribe = terminals.subscribe(sessionId, listener);
+  assertTerminal(sessionId, unsubscribe);
+  return unsubscribe;
+}
+
 // --- workspace inspection --------------------------------------------------------------------
 
 /**
@@ -899,6 +1040,9 @@ export async function shutdown() {
   shuttingDown = true;
   await pool.closeAll();
   lifecycle.close();
+  // Before the managed processes, and unlike a PostgreSQL server: an open shell is a child of this
+  // manager over a pty only it holds, so nothing could reach one it left behind.
+  await terminals.closeAll();
   await manager.stopAll();
   // Awaited: closeAll flushes queued JSONL writes, and server.js calls process.exit() right after.
   await logStore.closeAll();

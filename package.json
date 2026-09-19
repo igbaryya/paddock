@@ -10,16 +10,18 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node scripts/dev.js",
+    "postinstall": "node scripts/fix-pty-helper.js",
     "test": "node --test \"test/*.test.js\"",
     "setup": "npm --prefix ui install",
     "build": "npm --prefix ui run build",
     "desktop:setup": "npm --prefix desktop install",
     "desktop": "npm --prefix desktop start",
     "desktop:dist": "npm run build && npm --prefix desktop run dist",
-    "check": "node --check server.js && node --check config.js && node --check json-db.js && node --check applications.js && node --check workspace.js && node --check favicons.js && node --check login-item.js && node --check log-store.js && node --check process-manager.js && node --check service.js && node --check line-splitter.js && node --check postgres/cluster.js && node --check postgres/data-directory.js && node --check postgres/log-follower.js && node --check postgres/lifecycle.js && node --check postgres/discovery.js && node --check postgres/pool.js && node --check postgres/catalog.js && node --check postgres/admin.js && node --check platform/index.js && node --check platform/posix.js && node --check platform/win32.js && node --check platform/desktop.js && node --check http/respond.js && node --check http/api.js && node --check http/events.js && node --check http/mcp.js && node --check http/static.js && node --check scripts/dev.js && node --check desktop/main.js && node --check desktop/assets-dir.js && node --check desktop/splash.js && node --check desktop/server-dir.js && node --check desktop/server-process.js && node --check desktop/login-item.js && node --check desktop/window.js && node --check desktop/tray.js && node --check desktop/updates.js && node --check desktop/electron-builder.config.js && node --check desktop/scripts/render-icons.js"
+    "check": "node --check server.js && node --check config.js && node --check json-db.js && node --check applications.js && node --check workspace.js && node --check favicons.js && node --check login-item.js && node --check log-store.js && node --check process-manager.js && node --check process-group.js && node --check terminal-manager.js && node --check service.js && node --check line-splitter.js && node --check postgres/cluster.js && node --check postgres/data-directory.js && node --check postgres/log-follower.js && node --check postgres/lifecycle.js && node --check postgres/discovery.js && node --check postgres/pool.js && node --check postgres/catalog.js && node --check postgres/admin.js && node --check platform/index.js && node --check platform/posix.js && node --check platform/win32.js && node --check platform/desktop.js && node --check platform/pty.js && node --check http/respond.js && node --check http/api.js && node --check http/events.js && node --check http/sse.js && node --check http/terminal-stream.js && node --check http/mcp.js && node --check http/static.js && node --check scripts/dev.js && node --check scripts/fix-pty-helper.js && node --check desktop/main.js && node --check desktop/assets-dir.js && node --check desktop/splash.js && node --check desktop/server-dir.js && node --check desktop/server-process.js && node --check desktop/login-item.js && node --check desktop/window.js && node --check desktop/tray.js && node --check desktop/updates.js && node --check desktop/electron-builder.config.js && node --check desktop/scripts/render-icons.js && node --check desktop/scripts/rebuild-native.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "node-pty": "^1.1.0",
     "pg": "^8.23.0",
     "zod": "^4.4.3"
   }

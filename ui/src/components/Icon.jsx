@@ -14,6 +14,7 @@ import {
   Activity,
   ArrowDown,
   ArrowLeftRight,
+  Braces,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -26,6 +27,9 @@ import {
   Globe,
   Info,
   LayoutGrid,
+  Logs,
+  Maximize,
+  Minus,
   Monitor,
   Moon,
   Pencil,
@@ -55,11 +59,18 @@ const GLYPHS = {
   restart: RotateCw,
   refresh: RefreshCw,
   plus: Plus,
+  minus: Minus,
+  // Fit: corners pushed outward, the gesture of sizing a view to what is in it.
+  fit: Maximize,
   pencil: Pencil,
   trash: Trash2,
   search: Search,
   close: X,
   terminal: Terminal,
+  // The application's own log tail, as opposed to a process's terminal glyph on a card.
+  logs: Logs,
+  // Pretty: the braces of the JSON record it reformats.
+  braces: Braces,
   alert: TriangleAlert,
   // Points right: the ports table turns it a quarter to point down when a row is open.
   chevron: ChevronRight,

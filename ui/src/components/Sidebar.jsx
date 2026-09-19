@@ -17,11 +17,15 @@ const CONNECTION_LABEL = {
   offline: 'offline',
 };
 
+const MOD_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+  ? '⌘'
+  : 'Ctrl';
+
 /**
  * @param {{applications: object[], route: object, connection: string, portCount: number|null,
- *          onCreate: () => void}} props
+ *          onCreate: () => void, onOpenPalette: () => void}} props
  */
-export default function Sidebar({ applications, route, connection, portCount, onCreate }) {
+export default function Sidebar({ applications, route, connection, portCount, onCreate, onOpenPalette }) {
   const onOverview = route.name === 'overview';
   const onPorts = route.name === 'ports';
   const onSettings = route.name === 'settings';
@@ -37,6 +41,11 @@ export default function Sidebar({ applications, route, connection, portCount, on
           <span className="sr-only">Connection: </span>
           {CONNECTION_LABEL[connection]}
         </span>
+        <button type="button" className="nav-item sidebar-search" onClick={onOpenPalette}>
+          <Icon name="search" />
+          Search…
+          <kbd className="command-kbd">{MOD_LABEL}K</kbd>
+        </button>
       </div>
 
       <ul className="nav-list">

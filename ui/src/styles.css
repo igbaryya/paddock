@@ -1,12 +1,12 @@
 /**
- * The dashboard's design system, drawn after the desktop OS rather than after a web page: a floating
- * sidebar of material, a toolbar that the page scrolls under, content in rounded groups separated by
- * hairlines, capsule buttons, segmented controls and switches.
+ * The dashboard's design system, drawn after an infrastructure console rather than after a desktop
+ * OS: a near-black ground, flat surfaces held by a visible edge instead of by a shadow, controls
+ * with a small honest radius, and an application's services laid out as cards on a canvas.
  *
- * Colour still carries meaning first. The chrome is near-neutral, so the saturated things on screen
- * are the ones telling you something — a process is up, a process died, a port is reachable from
- * outside this machine. The one deliberate exception is the accent on wayfinding glyphs (sidebar and
- * settings icons), which is how the OS draws them and which never changes with state.
+ * Colour carries meaning first. The chrome is near-neutral, so the saturated things on screen are
+ * the ones telling you something — a process is up, a process died, a port is reachable from
+ * outside this machine. The one deliberate exception is the violet on wayfinding glyphs (sidebar
+ * and settings icons) and on the primary action, which never changes with state.
  *
  * Machine-produced text (paths, commands, pids, log lines) is always monospace; prose is never.
  * That separation is what makes a wall of output scannable.
@@ -20,53 +20,54 @@
 :root {
   color-scheme: dark;
 
-  /* Deep blue-black rather than neutral grey: it keeps the accent and the status greens readable
-     at low saturation without the whole screen looking washed out. */
-  --bg: #0a0d13;
-  --surface: #11151e;
-  --surface-2: #171c27;
-  --surface-3: #1f2532;
-  --glass: #131822;
-  --terminal: #07090e;
-  --toolbar: rgb(10 13 19 / 0.74);
-  --scrim: rgb(0 0 0 / 0.5);
-  --icon-tile: #252b37;
+  /* Near-black with the faintest violet in it, so the accent and the status greens sit on the same
+     ground they were picked against rather than on a flat grey. */
+  --bg: #08080b;
+  --surface: #131317;
+  --surface-2: #18181d;
+  --surface-3: #202027;
+  --glass: #101014;
+  --terminal: #050507;
+  --toolbar: rgb(8 8 11 / 0.78);
+  --scrim: rgb(0 0 0 / 0.55);
+  --icon-tile: #212129;
 
-  --separator: rgb(255 255 255 / 0.06);
-  --border: rgb(255 255 255 / 0.09);
-  --border-strong: rgb(255 255 255 / 0.16);
-  --rim: rgb(255 255 255 / 0.07);
-  --rim-highlight: rgb(255 255 255 / 0.05);
+  /* Edges do the work shadows used to: a card is separated from the ground by its border. */
+  --separator: rgb(255 255 255 / 0.07);
+  --border: rgb(255 255 255 / 0.13);
+  --border-strong: rgb(255 255 255 / 0.2);
+  --rim: rgb(255 255 255 / 0.1);
+  --rim-highlight: rgb(255 255 255 / 0.04);
 
   --fill-hover: rgb(255 255 255 / 0.05);
   --fill-selected: rgb(255 255 255 / 0.09);
   --fill-track: rgb(255 255 255 / 0.06);
   --zebra: rgb(255 255 255 / 0.022);
   --switch-off: rgb(255 255 255 / 0.16);
-  --knob: #2d3340;
+  --knob: #2b2b33;
 
-  --control: rgb(255 255 255 / 0.08);
-  --control-hover: rgb(255 255 255 / 0.13);
-  --control-edge: 0 0 0 0.5px rgb(0 0 0 / 0.55), inset 0 0.5px 0 rgb(255 255 255 / 0.1);
-  --field: rgb(255 255 255 / 0.05);
-  --field-edge: inset 0 0 0 1px rgb(255 255 255 / 0.09);
+  --control: rgb(255 255 255 / 0.07);
+  --control-hover: rgb(255 255 255 / 0.12);
+  --control-edge: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+  --field: rgb(255 255 255 / 0.04);
+  --field-edge: inset 0 0 0 1px rgb(255 255 255 / 0.11);
 
-  --text: #e8ebf1;
-  --text-dim: #959dae;
-  --text-faint: #5f6879;
+  --text: #ededf1;
+  --text-dim: #9b9baa;
+  --text-faint: #65656f;
 
-  --accent: #4f8cff;
-  --accent-hover: #6ea0ff;
-  --accent-fill: #2f6fef;
-  --accent-fill-hover: #3e7cf6;
-  --accent-soft: rgb(79 140 255 / 0.15);
+  --accent: #a394ff;
+  --accent-hover: #bcb1ff;
+  --accent-fill: #6c4fff;
+  --accent-fill-hover: #7d63ff;
+  --accent-soft: rgb(124 92 255 / 0.18);
   --on-accent: #ffffff;
-  --focus: rgb(79 140 255 / 0.5);
+  --focus: rgb(124 92 255 / 0.55);
 
   --ok: #3ecf8e;
   --warn: #f0b429;
   --danger: #f2555a;
-  --info: #55a3ff;
+  --info: #6ba5ff;
 
   --status-running: var(--ok);
   --status-starting: var(--warn);
@@ -86,21 +87,32 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --radius-xs: 6px;
-  --radius-sm: 8px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 18px;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  /* Push buttons, groups and fields: a small radius, not a capsule. Badges stay capsules, because a
+     status is a label rather than something to press. */
+  --radius-control: 7px;
 
-  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
-  --shadow-raised: 0 10px 28px rgb(0 0 0 / 0.42), 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-float: 0 0 0 1px rgb(0 0 0 / 0.35), 0 12px 32px rgb(0 0 0 / 0.45);
-  --shadow-sheet: 0 0 0 1px rgb(0 0 0 / 0.5), 0 28px 80px rgb(0 0 0 / 0.6);
+  /* Barely there. A surface is defined by its edge; a shadow is for the things that genuinely float
+     above the page — the drawer, a sheet, a card being dragged. */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.45);
+  --shadow-float: 0 8px 28px rgb(0 0 0 / 0.5);
+  --shadow-sheet: 0 24px 70px rgb(0 0 0 / 0.65);
+
+  /* --- the canvas ---
+     The dotted ground an application's services sit on, the curves between them, and the widths of
+     the two things sized in absolute terms: a service card and the drawer that details one. */
+  --canvas-dot: rgb(255 255 255 / 0.14);
+  --canvas-dot-size: 22px;
+  --edge: rgb(255 255 255 / 0.22);
+  --node-width: 272px;
+  --drawer-width: 468px;
 
   --sidebar-width: 244px;
-  /* The gap that floats the sidebar off the window's edges. */
-  --sidebar-inset: 10px;
   --gutter: 28px;
 }
 
@@ -110,46 +122,46 @@
 :root[data-theme='light'] {
   color-scheme: light;
 
-  --bg: #f2f3f6;
+  --bg: #f6f6f8;
   --surface: #ffffff;
-  --surface-2: #f5f6f9;
-  --surface-3: #eceef2;
-  --glass: #fbfcfd;
-  --terminal: #f7f8fa;
-  --toolbar: rgb(242 243 246 / 0.8);
-  --scrim: rgb(16 24 40 / 0.28);
-  --icon-tile: #f1f3f6;
+  --surface-2: #f7f7f9;
+  --surface-3: #eeeef2;
+  --glass: #ffffff;
+  --terminal: #f5f5f8;
+  --toolbar: rgb(246 246 248 / 0.82);
+  --scrim: rgb(18 18 24 / 0.3);
+  --icon-tile: #f1f1f5;
 
-  --separator: rgb(16 24 40 / 0.07);
-  --border: rgb(16 24 40 / 0.1);
-  --border-strong: rgb(16 24 40 / 0.2);
-  --rim: rgb(16 24 40 / 0.08);
+  --separator: rgb(18 18 24 / 0.08);
+  --border: rgb(18 18 24 / 0.12);
+  --border-strong: rgb(18 18 24 / 0.22);
+  --rim: rgb(18 18 24 / 0.11);
   --rim-highlight: #ffffff;
 
-  --fill-hover: rgb(16 24 40 / 0.04);
-  --fill-selected: rgb(16 24 40 / 0.07);
-  --fill-track: rgb(16 24 40 / 0.055);
-  --zebra: rgb(16 24 40 / 0.022);
-  --switch-off: rgb(16 24 40 / 0.13);
+  --fill-hover: rgb(18 18 24 / 0.04);
+  --fill-selected: rgb(18 18 24 / 0.07);
+  --fill-track: rgb(18 18 24 / 0.055);
+  --zebra: rgb(18 18 24 / 0.022);
+  --switch-off: rgb(18 18 24 / 0.14);
   --knob: #ffffff;
 
   --control: #ffffff;
-  --control-hover: #f6f7f9;
-  --control-edge: 0 0 0 0.5px rgb(16 24 40 / 0.22), 0 1px 1.5px rgb(16 24 40 / 0.08);
+  --control-hover: #f4f4f7;
+  --control-edge: inset 0 0 0 1px rgb(18 18 24 / 0.14);
   --field: #ffffff;
-  --field-edge: inset 0 0 0 1px rgb(16 24 40 / 0.15);
+  --field-edge: inset 0 0 0 1px rgb(18 18 24 / 0.16);
 
-  --text: #161b24;
-  --text-dim: #5c6675;
-  --text-faint: #8b94a2;
+  --text: #16161c;
+  --text-dim: #5d5d6b;
+  --text-faint: #8b8b98;
 
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-fill: #2563eb;
-  --accent-fill-hover: #1d4ed8;
-  --accent-soft: rgb(37 99 235 / 0.1);
+  --accent: #5b34e8;
+  --accent-hover: #4a26d4;
+  --accent-fill: #6c4fff;
+  --accent-fill-hover: #5b3af0;
+  --accent-soft: rgb(108 79 255 / 0.11);
   --on-accent: #ffffff;
-  --focus: rgb(37 99 235 / 0.35);
+  --focus: rgb(108 79 255 / 0.4);
 
   /* Darkened from the dark-theme values: the same hues fail contrast on white. */
   --ok: #12875a;
@@ -159,11 +171,13 @@
 
   --status-stopped: var(--text-faint);
 
-  --shadow-1: 0 1px 2px rgb(16 24 40 / 0.06);
-  --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05);
-  --shadow-raised: 0 10px 28px rgb(16 24 40 / 0.1), 0 1px 2px rgb(16 24 40 / 0.06);
-  --shadow-float: 0 1px 2px rgb(16 24 40 / 0.04), 0 12px 32px rgb(16 24 40 / 0.1);
-  --shadow-sheet: 0 0 0 1px rgb(16 24 40 / 0.06), 0 28px 80px rgb(16 24 40 / 0.22);
+  --canvas-dot: rgb(18 18 24 / 0.13);
+  --edge: rgb(18 18 24 / 0.18);
+
+  --shadow-1: 0 1px 2px rgb(18 18 24 / 0.07);
+  --shadow-raised: 0 4px 16px rgb(18 18 24 / 0.1);
+  --shadow-float: 0 8px 28px rgb(18 18 24 / 0.12);
+  --shadow-sheet: 0 24px 70px rgb(18 18 24 / 0.2);
 }
 
 /* --- base ------------------------------------------------------------------------------------ */
@@ -281,8 +295,7 @@ textarea {
 
 .app {
   display: grid;
-  /* The column holds the sidebar and the inset beside it, so the panel itself keeps its width. */
-  grid-template-columns: calc(var(--sidebar-width) + var(--sidebar-inset)) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   height: 100%;
 }
 
@@ -296,34 +309,24 @@ textarea {
   padding: 0 var(--gutter) var(--space-6);
 }
 
-/* Blocks keep their natural height and `.main` scrolls — otherwise flex shrinks them and the log
-   viewport collapses to a couple of lines. The log panel is the one exception, further down. */
+/* Blocks keep their natural height and `.main` scrolls — otherwise flex shrinks them and a panel
+   collapses to a couple of lines. The canvas is the one exception, further down. */
 .main > * {
   flex: none;
 }
 
-/* A block of prose under the toolbar — an application's description. */
-.page-intro {
-  max-width: 76ch;
-  margin-top: calc(var(--space-3) * -1);
-  color: var(--text-dim);
-}
-
 /* --- sidebar --------------------------------------------------------------------------------- */
 
-/* Modelled on the OS's own floating sidebar: a slab of material inset from the window on three
-   sides, lit along its top edge. Sections are separated by space, never by rules. The corner radius
-   is the rows' radius plus the padding, so the rows' corners run parallel to the panel's. */
+/* A flat rail flush to the window, separated from the page by one hairline rather than by a shadow
+   — the console layout, where the chrome is a frame around the work and never floats over it.
+   Sections are separated by space, never by rules. */
 .sidebar {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  margin: var(--sidebar-inset) 0 var(--sidebar-inset) var(--sidebar-inset);
   padding: 10px;
   background: var(--glass);
-  border: 1px solid var(--rim);
-  border-radius: var(--radius-xl);
-  box-shadow: inset 0 1px 0 var(--rim-highlight), var(--shadow-float);
+  border-right: 1px solid var(--separator);
   overflow-y: auto;
 }
 
@@ -523,10 +526,9 @@ textarea {
 
 /* --- toolbar --------------------------------------------------------------------------------- */
 
-/* The page's own toolbar. It spans the column edge to edge and sticks while the page scrolls under
-   it; its padding centres the title block on the sidebar's brand row. Where the browser can tie an
-   animation to scrolling, the material and the hairline under it only appear once something has
-   scrolled beneath — at rest the toolbar is part of the page, and does not clip the sidebar's shadow. */
+/* The page's top bar. It spans the column edge to edge, sticks while the page scrolls under it, and
+   keeps its hairline at all times: the bar is the frame the page lives in, so it reads as chrome
+   whether anything has scrolled beneath it or not. */
 .toolbar {
   position: sticky;
   top: 0;
@@ -535,31 +537,11 @@ textarea {
   align-items: center;
   gap: var(--space-3);
   margin: 0 calc(var(--gutter) * -1);
-  padding: 15px var(--gutter);
+  padding: 13px var(--gutter);
   background: var(--toolbar);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
   backdrop-filter: blur(20px) saturate(180%);
-  border-bottom: 1px solid transparent;
-}
-
-@supports (animation-timeline: scroll()) {
-  .toolbar {
-    animation: toolbar-material linear both;
-    animation-timeline: scroll();
-    animation-range: 0 24px;
-  }
-}
-
-@keyframes toolbar-material {
-  from {
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  to {
-    border-bottom-color: var(--separator);
-  }
+  border-bottom: 1px solid var(--separator);
 }
 
 .toolbar-title {
@@ -574,9 +556,9 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.022em;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
   line-height: 1.25;
 }
 
@@ -602,7 +584,8 @@ textarea {
 
 /* --- buttons --------------------------------------------------------------------------------- */
 
-/* Capsules, as the OS now draws push buttons: a light control material with a hairline edge. */
+/* A push button: control material, a hairline edge, and a small radius — the console's button, not
+   the OS's capsule. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -613,7 +596,7 @@ textarea {
   background: var(--control);
   color: var(--text);
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   box-shadow: var(--control-edge);
   font-size: 12.5px;
   font-weight: 500;
@@ -631,6 +614,14 @@ textarea {
   transform: scale(0.97);
 }
 
+/* A button that stays on once pressed — the log viewer's Pretty. Held in, rather than merely
+   highlighted, because it changes what the panel beneath it is showing. */
+.btn[aria-pressed='true'] {
+  background: var(--fill-selected);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
 .btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -640,10 +631,7 @@ textarea {
   background: var(--accent-fill);
   color: var(--on-accent);
   font-weight: 600;
-  box-shadow:
-    0 0 0 0.5px rgb(0 0 0 / 0.2),
-    0 1px 3px color-mix(in srgb, var(--accent-fill) 35%, transparent),
-    inset 0 0.5px 0 rgb(255 255 255 / 0.22);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--on-accent) 16%, transparent);
 }
 
 .btn.primary:hover:not(:disabled) {
@@ -696,20 +684,21 @@ textarea {
   width: 24px;
 }
 
-/* Joined controls, the OS's toolbar group: one capsule, the buttons inside it bare until hovered. */
+/* Joined controls: one bordered group, the buttons inside it bare until hovered. */
 .button-group {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   padding: 2px;
   background: var(--control);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   box-shadow: var(--control-edge);
 }
 
 .button-group > .btn {
   height: 26px;
   background: transparent;
+  border-radius: var(--radius-xs);
   box-shadow: none;
 }
 
@@ -871,7 +860,7 @@ textarea {
 
 .app-choice.selected {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent), var(--shadow-card);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .app-choice-text {
@@ -1048,7 +1037,7 @@ textarea {
 .search {
   min-height: 28px;
   padding: 3px 12px 3px 30px;
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   font-size: 12.5px;
 }
 
@@ -1127,18 +1116,18 @@ textarea {
 
 /* --- surfaces -------------------------------------------------------------------------------- */
 
-/* Every raised block shares one material: the surface, a faint rim, a soft shadow. */
+/* Every block shares one material: the surface and the edge that separates it from the ground.
+   Nothing here floats — only the drawer, a sheet and a card under the pointer cast a shadow. */
 .panel,
 .card,
 .stat,
 .group,
-.process-tile,
+.node,
 .empty,
 .form-section,
 .app-choice {
   background: var(--surface);
   border: 1px solid var(--rim);
-  box-shadow: var(--shadow-card);
 }
 
 .panel {
@@ -1184,27 +1173,6 @@ textarea {
   border-bottom: 1px solid var(--separator);
   font-size: 11.5px;
   color: var(--text-faint);
-}
-
-.section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.section-title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 0 2px;
-  font-size: 13px;
-  font-weight: 650;
-}
-
-.section-count {
-  font-weight: 500;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
 }
 
 /* --- summary strip --------------------------------------------------------------------------- */
@@ -1288,10 +1256,28 @@ textarea {
 }
 
 .app-icon-md {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  font-size: 16px;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  font-size: 15px;
+}
+
+/* Sized to the service cards' own icon tile, so the application's card and its processes' cards
+   have their glyphs in the same column. */
+.app-icon-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.app-icon-sm .app-icon-badge {
+  right: -4px;
+  bottom: -4px;
+  width: 14px;
+  height: 14px;
+  padding: 2px;
+  border-radius: 5px;
 }
 
 .app-icon > img {
@@ -1328,7 +1314,8 @@ textarea {
   gap: var(--space-4);
 }
 
-/* The whole card is a link; it lifts under the pointer the way a widget does. */
+/* The whole card is a link. Under the pointer its edge brightens rather than the card rising: in a
+   flat language a lift is the one motion that reads as a different material. */
 .card {
   display: flex;
   flex-direction: column;
@@ -1337,13 +1324,12 @@ textarea {
   border-radius: var(--radius-lg);
   color: inherit;
   text-decoration: none;
-  transition: box-shadow 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
+  transition: box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
 .card:hover {
-  border-color: var(--border);
+  border-color: var(--border-strong);
   box-shadow: var(--shadow-raised);
-  transform: translateY(-2px);
 }
 
 .card-head {
@@ -1433,134 +1419,350 @@ p.card-processes {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- processes ------------------------------------------------------------------------------- */
+/* --- the canvas ------------------------------------------------------------------------------ */
 
-.process-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: var(--space-3);
+/* The application page hands the canvas the window: it escapes the page's gutter, and the page
+   itself stops scrolling — the surface pans instead, which is the whole point of it. */
+.main:has(.canvas-page) {
+  gap: 0;
+  padding-bottom: 0;
+  overflow: hidden;
 }
 
-.process-tile {
+.main > .canvas-page {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0 calc(var(--gutter) * -1);
+}
+
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The ground. Its dot grid is sized and offset from script, so the dots travel and scale with the
+   surface rather than sitting still while the cards slide over them. */
+.canvas-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-image: radial-gradient(circle at 1px 1px, var(--canvas-dot) 1px, transparent 0);
+  cursor: grab;
+  /* The surface handles its own panning and zooming, so the browser must not also scroll or
+     bounce — on a trackpad both at once is what makes a canvas feel broken. */
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.canvas-viewport.panning {
+  cursor: grabbing;
+}
+
+/* Zero-sized deliberately: it is the world's origin, and everything on the surface is placed from
+   there. Scaling a box with no size is what keeps the transform maths in one place. */
+.canvas-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+/* A point at the origin that paints outside itself. That is what lets the curves be drawn straight
+   in world coordinates, with no viewBox to recompute on every pan. */
+.canvas-edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-edge {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.5;
+  transition: stroke 0.14s ease;
+}
+
+/* The curves into the open card, so what it hangs off is obvious while its drawer is up. */
+.canvas-edge.live {
+  stroke: var(--accent);
+}
+
+.canvas-slot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--node-width);
+}
+
+.canvas-slot.dragging {
+  z-index: 2;
+  cursor: grabbing;
+}
+
+/* The one card that genuinely floats: it is off the ground and over its neighbours until it lands. */
+.canvas-slot.dragging .node {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-float);
+}
+
+/* Zoom, and the Fit that recovers a view panned off into nothing. In the corner the drawer does not
+   cover, so it stays reachable with a card open. */
+.canvas-controls {
+  position: absolute;
+  left: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px;
+  background: var(--glass);
+  border: 1px solid var(--rim);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
+}
+
+.canvas-zoom {
+  min-width: 4.5ch;
+  text-align: center;
+}
+
+/* --- service cards --------------------------------------------------------------------------- */
+
+/* A card carries a stronger edge and a shadow than the panels elsewhere do: everything else sits on
+   the page, and these sit on open ground with a dot grid showing through behind them. */
+.node {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   min-width: 0;
-  padding: 12px;
-  border-radius: var(--radius);
+  border-color: var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
   transition: border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
-.process-tile:hover {
-  border-color: var(--border);
+.node:hover {
+  border-color: var(--border-strong);
 }
 
-/* A process that is down on its own is the one thing on the page that should catch the eye. */
-.process-tile:has(.tile-status.status-crashed, .tile-status.status-failed) {
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+/* Ringed rather than filled: an open card has to still read as the same card. */
+.node.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow-1);
 }
 
-.process-tile.disabled {
+/* A process that is down on its own is the one thing on the canvas that should catch the eye. The
+   status class has already set --status-color, so one rule covers crashed and failed alike. */
+.node.status-crashed,
+.node.status-failed {
+  border-color: color-mix(in srgb, var(--status-color) 45%, transparent);
+}
+
+.node.disabled {
   opacity: 0.6;
 }
 
-/* The slot a PostgreSQL server fills once it is defined: dashed like every empty state, and the
-   whole box is the button. It is the one thing to do on that page, so it carries the accent. */
-.define-tile {
-  padding: 0;
-  border-style: dashed;
+/* Lifted while it is being dragged — the one moment a card really is above the surface. */
+.canvas-slot.dragging .node {
   border-color: var(--border-strong);
-  box-shadow: none;
+  box-shadow: var(--shadow-raised);
 }
 
-.define-tile:hover {
+/* The strip the curves meet. Its height is fixed and nothing in it wraps: the anchor the surface
+   draws to is a constant, and a header that grew would leave every curve pointing at thin air. */
+.node-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  height: 44px;
+  padding: 0 10px 0 12px;
+}
+
+/* The name is the card's way in from the keyboard, so it has to be a real control — drawn as the
+   title it is, because a card full of buttons reads as a toolbar. It is also the card's drag
+   handle, which is why it shows the surface's grab cursor and not a pointer. */
+.node-open {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: inherit;
+  text-align: left;
+  cursor: inherit;
+}
+
+.node-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* A process's own favicon where it has one, and the glyph for what it is where it has not. The
+   neutral tile behind it is what keeps a dark favicon legible on the dark theme. */
+.node-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--icon-tile);
+  box-shadow: inset 0 0 0 1px var(--rim);
+  color: var(--text-dim);
+}
+
+.node-mark img {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+
+.node-alarm {
+  color: var(--danger);
+}
+
+.node-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 10px 12px;
+  border-top: 1px solid var(--separator);
+}
+
+.node-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.node-idle {
+  color: var(--text-faint);
+}
+
+/* The numbers that tick, in the quiet a tile's foot used to be drawn in. */
+.node-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.node-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 24px;
+}
+
+.node-foot > .node-facts {
+  flex: 1;
+}
+
+.node-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 4px 4px 9px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+}
+
+.node-notice > span {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The connection's URL: machine text on the terminal's own ground, cut rather than wrapped — the
+   whole of it is in the drawer, and a card is not where anyone reads a URL character by character. */
+.node-url {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 9px;
+  background: var(--terminal);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--separator);
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+/* The slot an application has not filled yet: dashed like every empty state, the whole box the
+   button, and the one thing on the canvas carrying the accent. */
+.node-placeholder {
+  background: none;
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.node-placeholder:hover {
   border-color: var(--accent);
 }
 
-.define-box {
-  flex: 1;
+.node-placeholder-box {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: 6px;
   padding: var(--space-5) var(--space-3);
   background: none;
   border: 0;
   border-radius: inherit;
-  color: var(--text);
+  color: var(--accent);
   text-align: center;
   cursor: pointer;
   transition: background 0.14s ease;
 }
 
-.define-box:hover {
+.node-placeholder-box:hover {
   background: var(--fill-hover);
 }
 
-.define-mark {
+.node-placeholder-mark {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
-  color: var(--accent);
 }
 
-.define-mark img {
-  width: 30px;
-  height: 30px;
+.node-placeholder-mark img {
+  width: 26px;
+  height: 26px;
 }
 
-.define-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13.5px;
+.node-placeholder-title {
+  font-size: 13px;
   font-weight: 600;
-  color: var(--accent);
-}
-
-.tile-head,
-.tile-foot {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.tile-foot {
-  min-height: 24px;
-}
-
-.process-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13.5px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-/* A tile's own glyph — the connection's database — not the icons inside its buttons. */
-.tile-head > .icon {
-  color: var(--accent);
-}
-
-.tile-buttons {
-  flex: none;
-  display: inline-flex;
-  gap: 2px;
 }
 
 /* Where it runs from and what it runs, shown the way a terminal would: in the terminal's own
-   ground, with a prompt column in place of labels. */
-.tile-well,
+   ground, with a drawn prompt in place of a label. */
 .command-well {
   display: flex;
   flex-direction: column;
@@ -1575,138 +1777,214 @@ p.card-processes {
   font-size: 11.5px;
 }
 
-.tile-line {
+/* --- the drawer ------------------------------------------------------------------------------ */
+
+/* Over the right of the canvas rather than beside it, so no card moves when it opens. It is not a
+   dialog: nothing behind it goes inert, and starting the process next to the one being read about
+   is exactly what it is for. */
+.drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--drawer-width), 100%);
+  background: var(--glass);
+  border-left: 1px solid var(--rim);
+  box-shadow: var(--shadow-sheet);
+  animation: slide-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* It takes focus on open so the keyboard arrives where the eye already is, and that is a move the
+   user made rather than a control they need outlined. */
+.drawer:focus {
+  outline: none;
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+
+.drawer-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.tile-prompt {
+  gap: var(--space-3);
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 12px;
-  color: var(--text-faint);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--separator);
 }
 
-.tile-value {
+.drawer-head > .icon {
+  color: var(--accent);
+}
+
+.drawer-heading {
   flex: 1;
   min-width: 0;
+}
+
+.drawer-head h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.drawer-subtitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 3px;
+  font-size: 12px;
   color: var(--text-dim);
 }
 
-.tile-value code,
-code.tile-value {
-  font-size: inherit;
+.drawer-tabs {
+  flex: none;
+  padding: var(--space-3) var(--space-4) 0;
 }
 
-code.tile-value,
-.tile-value .cmd {
-  color: var(--text);
+/* The body scrolls and the header above it does not, so switching tabs never moves the title or
+   the close button out from under the pointer. */
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  overflow-y: auto;
 }
 
-/* Cut from the front: the end of a path is what says which checkout it is. The inner code element
-   keeps its own left-to-right order while the box lays the overflow out from the right. */
-.tile-value.from-end {
-  direction: rtl;
-  text-align: left;
+.drawer-intro {
+  color: var(--text-dim);
 }
 
-.tile-facts {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 3px 10px;
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.tile-facts dt {
-  font-family: var(--sans);
-  font-size: 10.5px;
-  font-weight: 600;
-  line-height: 18px;
-  color: var(--text-faint);
+/* A column stretches what is in it, and a button as wide as the panel reads as a banner rather than
+   as something to press. */
+.drawer-section > .btn {
+  align-self: flex-start;
 }
 
-.tile-facts dd {
-  margin: 0;
-  line-height: 18px;
+.drawer-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 24px;
 }
 
-.tile-runtime {
+.drawer-section-head h3 {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-  font-size: 11.5px;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
-
-.tile-status {
+  font-size: 11px;
   font-weight: 650;
-  color: var(--status-color);
-  text-transform: capitalize;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
-.process-error {
-  display: -webkit-box;
+/* A run of labelled values in one group, hairlines between them: the settings list, at panel size.
+   The label column is a fixed width in every row, which is what lines the values up down the
+   panel without the rows having to know about each other. */
+.drawer-facts {
+  margin: 0;
   overflow: hidden;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  border-radius: var(--radius-sm);
-  box-shadow: inset 2px 0 0 var(--danger);
-  font-family: var(--mono);
-  font-size: 11.5px;
-  overflow-wrap: anywhere;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  background: var(--surface);
+  border: 1px solid var(--rim);
+  border-radius: var(--radius);
 }
 
-.process-notice {
+.drawer-fact {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 7px 12px;
+}
+
+.drawer-fact + .drawer-fact {
+  border-top: 1px solid var(--separator);
+}
+
+.drawer-facts dt {
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.drawer-facts dd {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+/* Wrapped, never cut: this is where someone comes to read the whole of a path the card could only
+   show one end of. */
+.drawer-machine {
+  min-width: 0;
+  color: var(--text);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.drawer-empty {
+  display: flex;
+  align-items: center;
   gap: var(--space-2);
-  padding: 6px 6px 6px 10px;
-  background: color-mix(in srgb, var(--warn) 12%, transparent);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-}
-
-.process-notice > span {
-  flex: 1;
-  min-width: 140px;
-}
-
-.process-empty {
-  padding: var(--space-5);
-  border: 1px dashed var(--border-strong);
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
   border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* The two long-lived panels the drawer hosts take the whole tab: a log tail and a result grid are
+   both things you want as much of as the window will give. */
+.drawer-body > .panel {
+  flex: 1;
+  min-height: 0;
 }
 
 /* --- logs ------------------------------------------------------------------------------------ */
 
-/* On an application's page the log panel takes whatever height is left, and never less than a
-   readable tail. */
+/* The tail fills the drawer tab it sits in, and never shrinks below a readable window. */
 .logs {
-  min-height: 380px;
-}
-
-.main > .logs {
-  flex: 1 0 380px;
+  min-height: 240px;
 }
 
 .log-tabs {
   max-width: min(100%, 560px);
 }
 
-.log-viewport {
+/* Holds the scroller and the pill that floats over it. The pill has to be outside the scroller:
+   anything positioned inside one scrolls away with the content. */
+.log-body {
+  position: relative;
+  display: flex;
   flex: 1;
   min-height: 0;
+}
+
+.log-viewport {
+  flex: 1;
+  min-width: 0;
   overflow: auto;
   padding: 8px 0;
   background: var(--terminal);
@@ -1720,12 +1998,28 @@ code.tile-value,
   box-shadow: inset 0 0 0 2px var(--focus);
 }
 
+/* Top-aligned: with Pretty on, a record is a block several lines tall and its timestamp belongs
+   beside the first of them, not floating in the middle.
+
+   `content-visibility` is what makes a full tail usable. Two thousand lines of coloured output is
+   some seventy thousand elements, and laying all of them out on every incoming batch dropped a
+   third of the frames; this way the browser only does that work for the lines actually on screen.
+   The intrinsic size is one line's height, used as the placeholder for rows never yet displayed —
+   `auto` keeps the real height once a row has been measured, and the tail re-pins itself as those
+   measurements come in (see LogViewer.jsx), which is what stops the estimate from being visible.
+
+   Preferred over windowing the list in script: the browser already knows what is on screen, and
+   a hand-rolled window over rows that are anything from one line to a whole stack trace tall is a
+   great deal of machinery to get wrong. */
 .log-line {
   display: flex;
+  align-items: flex-start;
   gap: 10px;
   padding: 0 14px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 20px;
 }
 
 .log-line:hover {
@@ -1757,6 +2051,110 @@ code.tile-value,
 
 .log-stderr .log-stream {
   color: var(--danger);
+}
+
+/* What a line says about itself, which is not the same as which pipe it came down: plenty of dev
+   servers report their own failures on stdout. These come after the stream rules on purpose, so
+   the level a line states wins over the pipe it arrived on. */
+.log-level-error {
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--danger);
+}
+
+/* Bar only. A warning is common enough in a busy log that tinting the row as well would leave the
+   whole viewport amber and mean nothing. */
+.log-level-warn {
+  background: none;
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+
+/* --- log syntax ------------------------------------------------------------------------------
+
+   The tail is mostly machine output, and one colour over all of it is a wall. The palette is the
+   app's own status colours, so a level in the log and a status dot on a card agree on what red
+   means; the rest is the usual division of a record into its keys, its values and its scaffolding.
+   ANSI is stripped by the manager, so every one of these is inferred from the text (log-format.js). */
+
+.log-t-key {
+  color: var(--info);
+}
+
+.log-t-string {
+  color: var(--ok);
+}
+
+.log-t-number {
+  color: var(--accent);
+}
+
+.log-t-literal {
+  color: var(--warn);
+}
+
+/* Braces, brackets, colons and commas: present so the shape of a record is readable, receded so
+   they are not what the eye lands on. */
+.log-t-punct {
+  color: var(--text-faint);
+}
+
+.log-t-url {
+  color: var(--info);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.log-t-level-error {
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.log-t-level-warn {
+  color: var(--warn);
+  font-weight: 650;
+}
+
+.log-t-level-info {
+  color: var(--info);
+}
+
+.log-t-level-debug {
+  color: var(--text-faint);
+}
+
+/* Back to the live end, from wherever reading has got to. It carries the count of what has
+   arrived since, because the reason to go back is usually that something has. */
+.log-jump {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-3);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 14px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border: 0;
+  border-radius: 999px;
+  box-shadow: var(--shadow-float);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: log-jump-in 0.16s ease-out;
+}
+
+.log-jump:hover {
+  background: var(--accent-fill-hover);
+}
+
+@keyframes log-jump-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
 }
 
 /* --- SQL console ----------------------------------------------------------------------------- */
@@ -2243,7 +2641,7 @@ code.tile-value,
   width: 52px;
   height: 52px;
   margin-bottom: var(--space-1);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -2311,7 +2709,7 @@ code.tile-value,
   padding: 12px 8px 12px 14px;
   background: var(--glass);
   border: 1px solid var(--rim);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-float);
   animation: rise-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -2351,14 +2749,188 @@ code.tile-value,
   animation: fade-in 0.16s ease;
 }
 
-/* A sheet: the material, a generous radius, its title and buttons pinned while the fields scroll. */
+/* --- command palette ------------------------------------------------------------------------- */
+
+.command-palette-backdrop {
+  z-index: 40;
+  place-items: start center;
+  padding-top: min(12vh, 96px);
+}
+
+.command-palette {
+  width: min(560px, 100%);
+  max-height: min(70vh, 640px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--glass);
+  border: 1px solid var(--rim);
+  border-radius: var(--radius-xl);
+  box-shadow: inset 0 1px 0 var(--rim-highlight), var(--shadow-sheet);
+  animation: rise-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.command-palette-head {
+  flex: none;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.command-palette-search {
+  max-width: none;
+  min-width: 0;
+}
+
+.command-palette-input {
+  min-height: 36px;
+  padding-right: 52px;
+  font-size: 14px;
+}
+
+.command-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  padding: 1px 6px;
+  border: 1px solid var(--separator);
+  border-radius: 5px;
+  background: var(--field);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  box-shadow: inset 0 -1px 0 var(--separator);
+}
+
+.command-kbd-esc {
+  position: absolute;
+  right: 10px;
+  pointer-events: none;
+}
+
+.command-palette-list {
+  flex: 1 1 0;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.command-palette-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.command-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.command-row:hover,
+.command-row.active {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.command-row.active .command-row-title,
+.command-row.active .command-row-icon {
+  color: var(--accent);
+}
+
+.command-row-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-muted);
+}
+
+.command-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.command-row-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-row-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-row-chevron {
+  flex: none;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.command-palette-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--separator);
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+.command-foot-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.command-foot-toggle {
+  margin-left: auto;
+}
+
+.sidebar-search {
+  width: 100%;
+  margin-top: 10px;
+  justify-content: flex-start;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.sidebar-search kbd {
+  margin-left: auto;
+  opacity: 0.75;
+}
+
+/* A sheet: the material, its title and buttons pinned while the fields scroll under them. */
 .modal {
   width: min(600px, 100%);
   max-height: min(88vh, 920px);
   overflow-y: auto;
   background: var(--glass);
   border: 1px solid var(--rim);
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
   box-shadow: inset 0 1px 0 var(--rim-highlight), var(--shadow-sheet);
   animation: rise-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -2367,14 +2939,56 @@ code.tile-value,
   position: sticky;
   top: 0;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   padding: 18px 22px 12px;
   background: var(--glass);
 }
 
 .modal-head h2 {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 16px;
   font-weight: 700;
   letter-spacing: -0.015em;
+}
+
+/* The application's log tail: the same dialog shell, taking the window, so a stack trace is a
+   page of output rather than a strip in a drawer. */
+.backdrop:has(.modal.full) {
+  padding: 0;
+}
+
+.modal.full {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+}
+
+.modal.full .modal-head {
+  flex: none;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.modal.full .logs {
+  flex: 1 1 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* The dialog already names this the logs; the panel's own heading would say it twice. */
+.modal.full .panel-title {
+  display: none;
 }
 
 .modal form {
@@ -2698,8 +3312,10 @@ code.tile-value,
   font-size: 11.5px;
 }
 
-/* A found cluster is a path plus what it is doing, so each entry takes two lines of the list. */
-.cluster-option {
+/* A found cluster is a path plus what it is doing, and a terminal target is a process plus where it
+   runs, so each entry takes two lines of the list. */
+.cluster-option,
+.terminal-target {
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
@@ -2726,6 +3342,61 @@ code.tile-value,
   font-family: var(--sans);
   font-size: 11.5px;
   color: var(--text-dim);
+}
+
+/* --- terminals ------------------------------------------------------------------------------- */
+
+/* The same shell as the log viewer, because it is the same object: a full-window panel whose head
+   is a row of controls and whose body is the terminal's own ground. */
+.terminals {
+  min-height: 320px;
+}
+
+.terminal-tabs {
+  max-width: min(100%, 560px);
+}
+
+/* Where the active shell is standing. Cut rather than wrapped: a repository path is long, the head
+   is one line, and the title attribute has the whole of it. */
+.terminal-cwd {
+  max-width: min(40%, 420px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+}
+
+/* A shell that has exited keeps its tab so its output can still be read, and says so by going
+   quiet rather than by disappearing under the cursor of someone about to click it. */
+.tab-ended {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.terminal-stack {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--terminal);
+}
+
+/* Each pane fills the stack rather than following it in flow: every terminal stays mounted so none
+   of them loses its screen, and only the chosen one is not `hidden`. */
+.terminal-pane {
+  position: absolute;
+  inset: 0;
+  padding: 8px 0 8px 12px;
+}
+
+.terminal-screen {
+  width: 100%;
+  height: 100%;
+}
+
+/* xterm draws its own scrollbar track inside this; the panel's rounded corner would clip the last
+   column of cells without it. */
+.terminal-screen .xterm {
+  height: 100%;
 }
 
 /* --- icons ----------------------------------------------------------------------------------- */
@@ -2755,7 +3426,8 @@ code.tile-value,
 
   .toast,
   .modal,
-  .backdrop {
+  .backdrop,
+  .drawer {
     animation: none;
   }
 
@@ -2779,26 +3451,33 @@ code.tile-value,
     height: auto;
   }
 
-  /* Stacked above the page, the sidebar floats off the top and both sides instead. */
+  /* Stacked above the page, so its hairline moves to the edge it now meets the page on. */
   .sidebar {
-    margin: var(--sidebar-inset) var(--sidebar-inset) 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--separator);
   }
 
   .main {
     overflow: visible;
   }
 
-  .main > .logs {
+  /* The canvas still needs a window of its own to pan inside, and there is no page height left to
+     take it from once everything is stacked. */
+  .main > .canvas-page {
     flex: none;
-    height: 70vh;
+    height: 78vh;
+  }
+
+  /* Full width: at this size the canvas behind it is a strip, and half a card is worse than none. */
+  .drawer {
+    --drawer-width: 100%;
   }
 
   .toolbar {
     flex-wrap: wrap;
   }
 
-  .card-grid,
-  .process-grid {
+  .card-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -240,6 +240,145 @@ describe('application CRUD', () => {
   });
 });
 
+describe('canvas layout', () => {
+  test('a new application starts with nothing placed', async () => {
+    const app = await createApp('layout-new');
+    assert.deepEqual(app.layout, {});
+  });
+
+  test('setLayout stores the positions it is given and replaces them wholesale', async () => {
+    const app = await createApp('layout-store');
+    const stored = await apps.setLayout(app.id, { '@application': { x: 10, y: -20 } });
+    assert.deepEqual(stored, { '@application': { x: 10, y: -20 } });
+    assert.deepEqual((await apps.getApplication(app.id)).layout, stored);
+
+    // A patch would leave cards behind at positions the canvas has stopped sending, so this replaces.
+    const moved = await apps.setLayout(app.id, { proc_abc: { x: 300, y: 0 } });
+    assert.deepEqual(moved, { proc_abc: { x: 300, y: 0 } });
+    assert.deepEqual((await apps.getApplication(app.id)).layout, moved);
+
+    assert.deepEqual(await apps.setLayout(app.id, {}), {}, 'an empty layout clears it');
+  });
+
+  test('a dragged card is not a change to the application, so updatedAt stands still', async () => {
+    const app = await createApp('layout-timestamp');
+    await afterTheClockTicksPast(app.updatedAt);
+    await apps.setLayout(app.id, { '@application': { x: 1, y: 2 } });
+    const reread = await apps.getApplication(app.id);
+    assert.equal(reread.updatedAt, app.updatedAt);
+  });
+
+  test('coordinates are rounded to whole units, and absent or null means nothing placed', async () => {
+    const app = await createApp('layout-round');
+    const stored = await apps.setLayout(app.id, { '@application': { x: 10.4, y: -20.6 } });
+    assert.deepEqual(stored, { '@application': { x: 10, y: -21 } });
+    assert.deepEqual(await apps.setLayout(app.id, null), {});
+    assert.deepEqual(await apps.setLayout(app.id, undefined), {});
+  });
+
+  test('a node literally called __proto__ is stored as a position, not applied to the prototype', async () => {
+    const app = await createApp('layout-proto');
+    // Computed, because `{ __proto__: … }` in a literal sets the prototype instead of a key — so the
+    // literal spelling would send an empty object and assert nothing.
+    const stored = await apps.setLayout(app.id, { ['__proto__']: { x: 5, y: 5 } });
+    assert.deepEqual(
+      Object.entries(stored),
+      [['__proto__', { x: 5, y: 5 }]],
+      'the key was swallowed by the prototype setter'
+    );
+    assert.deepEqual(Object.entries((await apps.getApplication(app.id)).layout), [
+      ['__proto__', { x: 5, y: 5 }],
+    ]);
+  });
+
+  test('the layout handed back is a copy — mutating it cannot rewrite the store', async () => {
+    const app = await createApp('layout-copy');
+    const stored = await apps.setLayout(app.id, { '@application': { x: 1, y: 1 } });
+    stored['@application'].x = 9_999;
+    assert.deepEqual((await apps.getApplication(app.id)).layout, { '@application': { x: 1, y: 1 } });
+  });
+
+  test('setLayout on an unknown application is a not-found, not a silent write', async () => {
+    await rejectsWith(
+      apps.setLayout('app_doesnotexist', { '@application': { x: 0, y: 0 } }),
+      apps.NotFoundError,
+      'app_doesnotexist'
+    );
+  });
+
+  test('a position that is not a finite pair of numbers is refused', async () => {
+    const app = await createApp('layout-bad');
+    for (const [position, ...fragments] of [
+      [{ y: 0 }, 'layout x', 'finite number', 'undefined'],
+      [{ x: 0, y: 'up' }, 'layout y', 'finite number', "'up'"],
+      [{ x: Number.NaN, y: 0 }, 'layout x', 'finite number'],
+      [{ x: Number.POSITIVE_INFINITY, y: 0 }, 'layout x', 'finite number'],
+      ['10,20', 'layout position', 'object'],
+      [null, 'layout position', 'object'],
+      [[0, 0], 'layout position', 'object'],
+    ]) {
+      await rejectsWith(
+        apps.setLayout(app.id, { '@application': position }),
+        apps.ValidationError,
+        ...fragments
+      );
+    }
+    await rejectsWith(apps.setLayout(app.id, 'nowhere'), apps.ValidationError, 'layout', 'object');
+  });
+
+  test('a position no viewport could ever reach is refused', async () => {
+    const app = await createApp('layout-far');
+    await rejectsWith(
+      apps.setLayout(app.id, { '@application': { x: 100_001, y: 0 } }),
+      apps.ValidationError,
+      'layout x',
+      '±100000'
+    );
+    await rejectsWith(
+      apps.setLayout(app.id, { '@application': { x: 0, y: -100_001 } }),
+      apps.ValidationError,
+      'layout y'
+    );
+    // The bound is inclusive, so a card parked exactly on the edge is still storable.
+    assert.deepEqual(await apps.setLayout(app.id, { '@application': { x: 100_000, y: -100_000 } }), {
+      '@application': { x: 100_000, y: -100_000 },
+    });
+  });
+
+  test('a layout with more positions than an application could have cards is refused', async () => {
+    const app = await createApp('layout-many');
+    const tooMany = Object.fromEntries(
+      Array.from({ length: 201 }, (_, i) => [`proc_${i}`, { x: i, y: 0 }])
+    );
+    await rejectsWith(
+      apps.setLayout(app.id, tooMany),
+      apps.ValidationError,
+      'at most 200 positions',
+      '201'
+    );
+  });
+
+  test('a node id longer than a name could be is refused', async () => {
+    const app = await createApp('layout-long-id');
+    await rejectsWith(
+      apps.setLayout(app.id, { ['n'.repeat(201)]: { x: 0, y: 0 } }),
+      apps.ValidationError,
+      'layout node id'
+    );
+  });
+
+  test('deleting a process leaves its position behind rather than failing on it', async () => {
+    const app = await createApp('layout-orphan');
+    const proc = await apps.addProcess(app.id, processInput());
+    await apps.setLayout(app.id, { [proc.id]: { x: 400, y: 0 } });
+    await apps.removeProcess(app.id, proc.id);
+    // Presentation only: an id the application no longer has is harmless, and the canvas simply
+    // stops sending it on the next drag. Validating ids against the process list would instead make
+    // a delete able to break a later save.
+    assert.deepEqual((await apps.getApplication(app.id)).layout, { [proc.id]: { x: 400, y: 0 } });
+  });
+});
+
 describe('process CRUD', () => {
   test('addProcess stores the normalised process and attaches it to its application', async () => {
     const app = await createApp('procs');

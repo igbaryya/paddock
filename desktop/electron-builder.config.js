@@ -13,6 +13,7 @@
  * Publishing happens only when asked (`--publish always`, as the release workflow does).
  */
 import fs from 'node:fs';
+import rebuildNative from './scripts/rebuild-native.js';
 
 const serverPackage = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -96,4 +97,7 @@ export default {
   // Per-user, into a fixed directory: the Run key entry names the executable's path.
   // No spaces in the name: GitHub replaces them on upload, and latest.yml names the uploaded file.
   nsis: { oneClick: true, perMachine: false, artifactName: '${productName}-Setup-${version}.${ext}' },
+  // Rebuild node-pty for Electron's ABI inside the packed server tree only — the checkout's own
+  // node_modules stays on the Node ABI for `npm start`.
+  afterPack: rebuildNative,
 };

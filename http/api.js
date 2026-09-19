@@ -76,6 +76,29 @@ const routes = [
   route('POST', '/api/applications/:appId/sql', async ({ params, req }) =>
     service.runStatement(params.appId, await readJsonBody(req))),
 
+  // The dashboard's terminals. Dashboard-only, like Browse and for a stronger version of the same
+  // reason: this is the one capability that hands out an interactive shell, and the loopback and
+  // origin guard in server.js is what makes it sound. There is no MCP tool, and the body names a
+  // process — never a directory, so a caller cannot ask for a shell somewhere unregistered.
+  route('GET', '/api/applications/:appId/terminals', ({ params }) =>
+    service.listTerminals(params.appId)),
+  route('POST', '/api/applications/:appId/terminals', async ({ params, req }) =>
+    service.openTerminal(params.appId, await readJsonBody(req))),
+
+  // Keystrokes and geometry are POSTs rather than a socket: SSE carries the output, and keeping
+  // the input on /api means it passes the one origin guard instead of needing a second one on an
+  // upgrade handler. `/api/terminals/:id/stream` is not here — see server.js, as with /api/events.
+  route('POST', '/api/terminals/:id/input', async ({ params, req }) => {
+    service.writeTerminal(params.id, (await readJsonBody(req)).data);
+  }),
+  route('POST', '/api/terminals/:id/resize', async ({ params, req }) => {
+    const { cols, rows } = await readJsonBody(req);
+    service.resizeTerminal(params.id, cols, rows);
+  }),
+  route('DELETE', '/api/terminals/:id', async ({ params }) => {
+    await service.closeTerminal(params.id);
+  }),
+
   // POST, not GET: it puts a dialog on the user's screen, and a GET is something a browser may send
   // on its own (a prefetch, a restored tab).
   route('POST', '/api/workspace/pick', async ({ req }) =>

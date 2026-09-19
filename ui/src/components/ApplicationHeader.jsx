@@ -1,8 +1,13 @@
 /**
- * The application page's toolbar: a back button, the application's icon and name, whether it is up,
- * and two groups of controls — the ones that act on every process, and the ones that change the
- * application's configuration. Keeping them in separate groups is what stops a Delete from sitting
- * one slip away from a Stop.
+ * The application page's top bar: a back button, the application's icon and name, whether it is up,
+ * and the controls that act on every process at once.
+ *
+ * Only what applies to the whole application is up here. Editing one process or deleting anything
+ * belongs to a single card and lives in that card's drawer — which also puts the application's own
+ * Delete a deliberate click away from its Stop, rather than beside it. The log of every process at
+ * once is the one exception: it is the whole application's output, so it is a control on this bar.
+ * A terminal is the same case — it opens in one of the application's repositories, and which one
+ * is a question the panel asks, not something a single card owns.
  */
 import StatusDot from './StatusDot.jsx';
 import IconButton from './IconButton.jsx';
@@ -28,8 +33,9 @@ function Summary({ application }) {
 
 /**
  * @param {{application: object, favicons: Record<string, object>, busy: boolean,
- *          onAction: (action: string) => void, onEdit: () => void, onDelete: () => void,
- *          onAddProcess: () => void}} props
+ *          onAction: (action: string) => void, onEdit: () => void,
+ *          onAddProcess: () => void, onOpenLogs: () => void,
+ *          onOpenTerminal: () => void}} props
  */
 export default function ApplicationHeader({
   application,
@@ -37,8 +43,9 @@ export default function ApplicationHeader({
   busy,
   onAction,
   onEdit,
-  onDelete,
   onAddProcess,
+  onOpenLogs,
+  onOpenTerminal,
 }) {
   // A PostgreSQL application's one process comes from its settings, so there is nothing to add.
   const postgres = application.kind === 'postgres';
@@ -47,32 +54,31 @@ export default function ApplicationHeader({
   const startable = application.status !== 'running' && application.processes.length > 0;
 
   return (
-    <>
-      <Toolbar
-        back={{ to: paths.overview(), label: 'All applications' }}
-        leading={<AppIcon application={application} favicons={favicons} size="md" />}
-        title={application.name}
-        subtitle={<Summary application={application} />}
-      >
-        <span className="button-group" role="group" aria-label="Every process">
-          <IconButton
-            icon="play"
-            label="Start all"
-            className={startable ? 'accent' : ''}
-            disabled={busy}
-            onClick={() => onAction('start')}
-          />
-          <IconButton icon="stop" label="Stop all" disabled={busy} onClick={() => onAction('stop')} />
-          <IconButton icon="restart" label="Restart all" disabled={busy} onClick={() => onAction('restart')} />
-        </span>
-        <span className="button-group" role="group" aria-label="Configuration">
-          {!postgres && <IconButton icon="plus" label="Add process" onClick={onAddProcess} />}
-          <IconButton icon="pencil" label="Edit application" onClick={onEdit} />
-          <IconButton icon="trash" label="Delete application" className="danger" onClick={onDelete} />
-        </span>
-      </Toolbar>
-
-      {application.description && <p className="page-intro">{application.description}</p>}
-    </>
+    <Toolbar
+      back={{ to: paths.overview(), label: 'All applications' }}
+      leading={<AppIcon application={application} favicons={favicons} size="md" />}
+      title={application.name}
+      subtitle={<Summary application={application} />}
+    >
+      <span className="button-group" role="group" aria-label="Every process">
+        <IconButton
+          icon="play"
+          label="Start all"
+          className={startable ? 'accent' : ''}
+          disabled={busy}
+          onClick={() => onAction('start')}
+        />
+        <IconButton icon="stop" label="Stop all" disabled={busy} onClick={() => onAction('stop')} />
+        <IconButton icon="restart" label="Restart all" disabled={busy} onClick={() => onAction('restart')} />
+      </span>
+      {/* Beside the lifecycle controls rather than with the configuration ones: a terminal is
+          something you do to a running application, not something you change about it. */}
+      <IconButton icon="terminal" label="Open terminal" onClick={onOpenTerminal} />
+      <IconButton icon="logs" label="Open logs" onClick={onOpenLogs} />
+      <span className="button-group" role="group" aria-label="Configuration">
+        {!postgres && <IconButton icon="plus" label="Add process" onClick={onAddProcess} />}
+        <IconButton icon="pencil" label="Edit application" onClick={onEdit} />
+      </span>
+    </Toolbar>
   );
 }

@@ -1,11 +1,15 @@
 /**
- * Renders the app and tray icons from SVG with Electron's own renderer, so it needs nothing the
- * package does not already install. Run it after changing an icon — `npm run icons` — and commit the
- * results; electron-builder turns build/icon.png into the .icns and build/icon-win.png into the .ico.
+ * Renders the app, tray and download-site icons from SVG with Electron's own renderer, so it needs
+ * nothing the package does not already install. Run it after changing an icon — `npm run icons` —
+ * and commit the results; electron-builder turns build/icon.png into the .icns and build/icon-win.png
+ * into the .ico.
  *
- * The app icon is the dashboard's favicon, not a copy of it. macOS draws app icons inside a margin
+ * Every icon is the dashboard's favicon, not a copy of it. macOS draws app icons inside a margin
  * (824 of 1024 px) and expects the icon to carry its own shadow in that margin; Windows draws them
  * edge to edge, hence two renders. The full-bleed assets/icon.png is for the app's own windows.
+ *
+ * The download site is published as site/ alone (.github/workflows/pages.yml uploads that folder),
+ * so it cannot reach the dashboard's copy and carries a rendered one instead.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -15,6 +19,9 @@ import { BrowserWindow, app } from 'electron';
 const DESKTOP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FAVICON = path.join(DESKTOP_DIR, '..', 'ui', 'public', 'favicon.svg');
 const TRAY_TEMPLATE = path.join(DESKTOP_DIR, 'icons', 'tray-template.svg');
+/** Relative to this package, as every output below is. */
+const SITE_DIR = path.join('..', 'site');
+const SITE_FAVICON = path.join(SITE_DIR, 'favicon.svg');
 
 const NO_SHADOW = { blur: 0, offsetY: 0 };
 
@@ -29,6 +36,9 @@ const RENDERS = [
   { source: FAVICON, size: 32, inset: 0, output: 'assets/tray@2x.png' },
   { source: TRAY_TEMPLATE, size: 16, inset: 0, output: 'assets/trayTemplate.png' },
   { source: TRAY_TEMPLATE, size: 32, inset: 0, output: 'assets/trayTemplate@2x.png' },
+  // iOS composites a home-screen icon's transparent corners onto black, which the mark's own ground
+  // already is, so it goes on full bleed and lets the system apply its mask.
+  { source: FAVICON, size: 180, inset: 0, output: path.join(SITE_DIR, 'apple-touch-icon.png') },
 ];
 
 /**
@@ -70,6 +80,9 @@ async function main() {
     await fs.writeFile(output, await rasterise(window, render));
     console.log(`${render.output}  ${render.size}×${render.size}`);
   }
+  // The site draws the mark at 32 px in its header and in the tab, where the vector is the sharp one.
+  await fs.copyFile(FAVICON, path.join(DESKTOP_DIR, SITE_FAVICON));
+  console.log(`${SITE_FAVICON}  vector`);
 }
 
 main()

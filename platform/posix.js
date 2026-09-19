@@ -558,6 +558,20 @@ export async function removeLoginItem(spec) {
 export const shellInvocation = (command) => ({ file: '/bin/sh', args: ['-c', command] });
 
 /**
+ * The shell a person gets in a terminal, as opposed to the one a configured command runs under.
+ * Theirs, not `/bin/sh`: a terminal that ignores the shell they chose has the wrong prompt, the
+ * wrong aliases and the wrong history.
+ *
+ * `-l` because it is a login shell that reads the profile where nvm, pyenv and homebrew put
+ * themselves. Paddock is often started by launchd or the Dock with a minimal environment
+ * (FINDINGS G2), and a terminal that inherited that would be one where `npm` is not found.
+ */
+export const interactiveShell = () => ({
+  file: process.env.SHELL?.trim() || '/bin/zsh',
+  args: ['-l'],
+});
+
+/**
  * `detached: true` makes libuv call setsid(), which is what gives the child its own group and makes
  * `child.pid === pgid`. cwd/env are the caller's to pass to spawn; this layer adds nothing to them.
  */

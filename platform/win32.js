@@ -155,6 +155,15 @@ const system32 = (exe) => `${process.env.SystemRoot || 'C:\\Windows'}\\System32\
 const POWERSHELL = `${process.env.SystemRoot || 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
 
 /**
+ * The shell a person gets in a terminal, as opposed to the one a configured command runs under.
+ * PowerShell rather than `cmd`, because it is what current Windows opens by default, and by its
+ * absolute path for the same reason every other tool here is: PATH may include the repository
+ * this manager happens to be running in. `-NoProfile` is deliberately absent — a terminal exists
+ * to be the user's shell, and their profile is most of what makes it theirs.
+ */
+export const interactiveShell = () => ({ file: POWERSHELL, args: ['-NoLogo'] });
+
+/**
  * Console tools exit non-zero for "nothing matched" as readily as for a real failure, so output is
  * taken wherever it exists and a failure degrades the scan rather than ending it.
  * @param {string} file @param {string[]} args

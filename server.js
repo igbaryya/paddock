@@ -15,6 +15,8 @@ import { DISPLAY_HOST, HOST, HOSTNAME, PORT, SHUTDOWN_GRACE_MS } from './config.
 import { json } from './http/respond.js';
 import { handleApi } from './http/api.js';
 import { handleEvents, start as startEvents, stop as stopEvents } from './http/events.js';
+import { handleTerminalStream, STREAM_PATH } from './http/terminal-stream.js';
+import { stop as stopStreams } from './http/sse.js';
 import { handleMcp } from './http/mcp.js';
 import { handleStatic } from './http/static.js';
 import { loginShellPath } from './platform/index.js';
@@ -112,6 +114,11 @@ async function route(req, res) {
   }
   if (pathname === '/mcp') return handleMcp(req, res);
   if (pathname === '/api/events') return handleEvents(req, res);
+  // Routed here rather than from the table in http/api.js for the same reason /api/events is: SSE
+  // owns its response for the life of the connection, and that table answers every route with one
+  // JSON body. Guarded above like the rest of /api, because it is under /api.
+  const terminalStream = STREAM_PATH.exec(pathname);
+  if (terminalStream) return handleTerminalStream(req, res, terminalStream[1]);
   if (isGuardedPath(pathname)) {
     if (await handleApi(req, res, url)) return;
     const message = `no route for ${req.method} ${pathname}`;
@@ -170,6 +177,9 @@ async function shutdown(signal) {
   console.error(`[paddock] ${signal} — stopping managed processes`);
   server.close();
   stopEvents();
+  // After the hub has ended its own clients: this only cancels the keep-alive they shared, and a
+  // live timer would keep the event loop's last reference alive past the graceful phase.
+  stopStreams();
   let deadline;
   const bounded = new Promise((resolve) => {
     deadline = setTimeout(() => resolve('timed out'), SHUTDOWN_GRACE_MS);

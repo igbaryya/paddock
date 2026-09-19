@@ -7,6 +7,7 @@
  */
 import * as desktop from './desktop.js';
 import * as posix from './posix.js';
+import * as pty from './pty.js';
 import * as win32 from './win32.js';
 
 const impl = process.platform === 'win32' ? win32 : posix;
@@ -131,6 +132,34 @@ export const processExists = impl.processExists;
  *                   {status: 'unavailable', reason: string}>}
  */
 export const pickDirectory = impl.pickDirectory;
+
+// --- pseudo-terminals --------------------------------------------------------------------------
+
+/**
+ * The shell a person gets when they open a terminal — theirs, and a login shell, as opposed to the
+ * `sh -c` that runs a configured command. It is chosen here rather than in `pty.js` so that the one
+ * `process.platform` branch in this file stays the only one.
+ * @returns {{file: string, args: string[]}}
+ */
+export const interactiveShell = impl.interactiveShell;
+
+/**
+ * Whether this installation can open a pseudo-terminal, and the loader's own reason when it cannot.
+ * A native binding is built for one Node ABI and this server runs under two (a checkout's node, and
+ * Electron's in the desktop app), so "no terminal" is a state to report, not a crash.
+ * @returns {Promise<{available: boolean, reason: string|null}>}
+ */
+export const ptyAvailability = pty.availability;
+
+/**
+ * Open a pseudo-terminal running `file`. Unlike `spawnOptions`, nothing is merged in here: a pty is
+ * already its own session and its own process group, which is what makes `signalTree` the right way
+ * to end one.
+ * @param {{file: string, args: string[], cwd: string, env: Record<string, string>, cols: number,
+ *          rows: number}} request
+ * @returns {Promise<import('./pty.js').PtyHandle>}
+ */
+export const openPty = pty.open;
 
 /**
  * The one seam not chosen by OS alone: under the desktop app the entry is the app, which only the app

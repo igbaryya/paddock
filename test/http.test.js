@@ -53,6 +53,13 @@ const postJson = (p, body) =>
     body: JSON.stringify(body),
   });
 
+const putJson = (p, body) =>
+  api(p, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
 /**
  * A request written byte for byte onto the socket: the only way to forge a Host/Origin header or to
  * send a target the URL parser would normalise away.
@@ -315,6 +322,38 @@ test('REST: create, add a process, list, get, patch and delete round-trips throu
   const deleted = await api(`/api/applications/${created.id}`, { method: 'DELETE' });
   assert.equal(deleted.status, 204);
   assert.equal((await api(`/api/applications/${created.id}`)).status, 404);
+});
+
+// The canvas saves an arrangement on every drop, so this route is the most frequently written one in
+// the API. It answers with the layout alone — the dashboard already has the application, and sending
+// the whole view back on each drop would have every drag fight the list it is drawn from.
+test('a dragged arrangement is stored, comes back on the application, and is replaced wholesale', async () => {
+  const app = await createApplication('layout');
+  assert.deepEqual((await api(`/api/applications/${app.id}`)).json().layout, {});
+
+  const saved = await putJson(`/api/applications/${app.id}/layout`, {
+    layout: { '@application': { x: 0, y: 120 }, '@connection': { x: 320.4, y: 0 } },
+  });
+  assert.equal(saved.status, 200, saved.text);
+  assert.deepEqual(saved.json(), {
+    layout: { '@application': { x: 0, y: 120 }, '@connection': { x: 320, y: 0 } },
+  });
+  assert.deepEqual((await api(`/api/applications/${app.id}`)).json().layout, saved.json().layout);
+
+  const cleared = await putJson(`/api/applications/${app.id}/layout`, { layout: {} });
+  assert.deepEqual(cleared.json(), { layout: {} });
+
+  const bad = await putJson(`/api/applications/${app.id}/layout`, {
+    layout: { '@application': { x: 'left', y: 0 } },
+  });
+  assert.equal(bad.status, 400, bad.text);
+  assert.equal(bad.json().error.code, 'validation_error');
+  assert.match(bad.json().error.message, /layout x/);
+
+  const missing = await putJson('/api/applications/app_nosuchthing/layout', { layout: {} });
+  assert.equal(missing.status, 404, missing.text);
+
+  await api(`/api/applications/${app.id}`, { method: 'DELETE' });
 });
 
 // With Paddock running as a login agent, starting a second copy by hand is the expected mistake. The
@@ -961,4 +1000,127 @@ test('SSE delivers a log event for a started process and survives the client dis
   const health = await api('/api/health');
   assert.equal(health.status, 200, 'the hub must survive a client vanishing mid-stream');
   assert.equal(health.json().status, 'ok');
+});
+
+test('a forged Origin on terminal routes is refused by the local-origin guard', async () => {
+  const app = await createApplication('term-guard');
+  const res = await raw({
+    method: 'GET',
+    target: `/api/applications/${app.id}/terminals`,
+    headers: { Origin: 'http://evil.com' },
+  });
+  assert.equal(res.status, 403);
+  assert.deepEqual(JSON.parse(res.body), {
+    error: { message: 'local requests only', code: 'forbidden' },
+  });
+});
+
+test('GET /api/applications/:id/terminals lists targets and support status', async () => {
+  const app = await createApplication('term-list');
+  const added = await postJson(`/api/applications/${app.id}/processes`, {
+    name: 'worker',
+    repositoryPath: repoDir,
+    command: 'sleep 30',
+  });
+  assert.equal(added.status, 200, added.text);
+  const procId = added.json().processes[0].id;
+
+  const res = await api(`/api/applications/${app.id}/terminals`);
+  assert.equal(res.status, 200);
+  const body = res.json();
+  assert.equal(typeof body.support.available, 'boolean');
+  assert.equal(body.targets.length, 1);
+  assert.equal(body.targets[0].processId, procId);
+  assert.equal(body.targets[0].cwd, repoDir);
+  assert.ok(Array.isArray(body.sessions));
+});
+
+test('POST /api/applications/:id/terminals refuses an unknown process id', async () => {
+  const app = await createApplication('term-404');
+  await postJson(`/api/applications/${app.id}/processes`, {
+    name: 'worker',
+    repositoryPath: repoDir,
+    command: 'sleep 30',
+  });
+  const res = await postJson(`/api/applications/${app.id}/terminals`, {
+    processId: 'proc_not_here',
+  });
+  assert.equal(res.status, 404);
+  assert.match(res.json().error.message, /No terminal target/);
+});
+
+test('terminal open, stream, input and close', async (t) => {
+  const platform = await import(new URL('../platform/index.js', import.meta.url).href);
+  const { available, reason } = await platform.ptyAvailability();
+  if (!available) {
+    t.skip(reason ?? 'no pseudo-terminal support');
+    return;
+  }
+
+  const app = await createApplication('term-live');
+  const added = await postJson(`/api/applications/${app.id}/processes`, {
+    name: 'shell',
+    repositoryPath: repoDir,
+    command: 'sleep 30',
+  });
+  assert.equal(added.status, 200, added.text);
+  const procId = added.json().processes[0].id;
+
+  const opened = await postJson(`/api/applications/${app.id}/terminals`, {
+    processId: procId,
+    cols: 80,
+    rows: 24,
+  });
+  assert.equal(opened.status, 200, opened.text);
+  const session = opened.json();
+  assert.match(session.id, /^[0-9a-f-]{36}$/);
+
+  const stream = await fetch(`${baseUrl()}/api/terminals/${encodeURIComponent(session.id)}/stream`, {
+    headers: { Accept: 'text/event-stream' },
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(stream.status, 200);
+  assert.equal(stream.headers.get('content-type'), 'text/event-stream');
+
+  const reader = stream.body.getReader();
+  const decoder = new TextDecoder();
+  let buffered = '';
+  const frames = [];
+  const readUntil = async (predicate, what) => {
+    const deadline = Date.now() + SSE_EVENT_TIMEOUT_MS;
+    for (;;) {
+      if (frames.some(predicate)) return;
+      if (Date.now() > deadline) {
+        throw new Error(`no terminal SSE frame matching ${what}; saw ${JSON.stringify(frames)}`);
+      }
+      const { value, done } = await reader.read();
+      if (done) throw new Error(`terminal stream ended before ${what}`);
+      buffered += decoder.decode(value, { stream: true });
+      const parts = buffered.split('\n\n');
+      buffered = parts.pop();
+      for (const part of parts) {
+        const event = part.match(/^event: (.+)$/m)?.[1];
+        const data = part.match(/^data: (.*)$/m)?.[1];
+        frames.push({ event: event ?? null, data: data ? JSON.parse(data) : null });
+      }
+    }
+  };
+
+  const typed = await postJson(`/api/terminals/${session.id}/input`, {
+    data: 'printf paddock-http-term\\n',
+  });
+  assert.equal(typed.status, 204, typed.text);
+
+  await readUntil(
+    (f) => f.event === 'data' && f.data.chunk.includes('paddock-http-term'),
+    'terminal output from typed command'
+  );
+
+  const closed = await fetch(`${baseUrl()}/api/terminals/${session.id}`, {
+    method: 'DELETE',
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(closed.status, 204, await closed.text());
+
+  await reader.cancel().catch(() => {});
 });

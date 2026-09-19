@@ -5,12 +5,14 @@
  * happened — so nothing here keeps an optimistic copy of runtime state that could disagree with the
  * processes on the machine.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as api from './api.js';
+import { buildCommands } from './commands.js';
 import { useLiveState } from './useLiveState.js';
 import { useFavicons } from './useFavicons.js';
 import { Link, navigate, paths, useRoute } from './router.jsx';
 import Sidebar from './components/Sidebar.jsx';
+import CommandPalette from './components/CommandPalette.jsx';
 import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import EmptyState from './components/EmptyState.jsx';
@@ -41,6 +43,19 @@ function failureSummary(result) {
   return failed.map((one) => `${one.name}: ${one.error ?? one.status}`).join(' · ');
 }
 
+function isMod(event) {
+  return event.metaKey || event.ctrlKey;
+}
+
+/** @param {EventTarget|null} target */
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target.closest('.xterm')) return true;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+}
+
 export default function App() {
   const route = useRoute();
   const live = useLiveState(route.applicationId ?? null);
@@ -51,6 +66,8 @@ export default function App() {
   const [actionError, setActionError] = useState(null);
   const [staleProcesses, setStaleProcesses] = useState([]);
   const [busy, setBusy] = useState(() => new Set());
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteIntent, setPaletteIntent] = useState(null);
 
   /**
    * Run one manager command. `key` is the application or process the command belongs to, so only
@@ -115,6 +132,15 @@ export default function App() {
       return result;
     });
 
+  /**
+   * A card was dropped on the canvas. Deliberately not routed through `run`: it locks no controls
+   * and needs no refetch — the canvas is already showing the arrangement it just sent, and nothing
+   * about what is running has changed. A rejection still has to surface, or the next refresh would
+   * quietly undo the move with no explanation.
+   */
+  const saveLayout = (applicationId, layout) =>
+    api.saveLayout(applicationId, layout).catch((err) => setActionError(err.message));
+
   const deleteApplication = (application) => {
     // A PostgreSQL server is not Paddock's to stop on the way out; deleting only forgets it.
     const message = application.kind === 'postgres'
@@ -167,6 +193,42 @@ export default function App() {
 
   const openApplicationForm = (application = null) => setDialog({ kind: 'application', application });
 
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        applications,
+        route,
+        selected,
+        setIntent: setPaletteIntent,
+        openApplicationForm,
+        refreshPorts,
+      }),
+    [applications, route, selected, refreshPorts]
+  );
+
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (isMod(event) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+
+      if (paletteOpen || isTypingTarget(event.target)) return;
+
+      if (isMod(event) && event.key >= '1' && event.key <= '9') {
+        const index = Number(event.key) - 1;
+        const application = applications[index];
+        if (!application) return;
+        event.preventDefault();
+        navigate(paths.application(application.id));
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [applications, paletteOpen]);
+
   const banner = actionError ?? live.error;
   const dismissBanner = () => {
     setActionError(null);
@@ -181,6 +243,7 @@ export default function App() {
         connection={connection}
         portCount={ports.ports?.length ?? null}
         onCreate={() => openApplicationForm()}
+        onOpenPalette={() => setPaletteOpen(true)}
       />
 
       <main className="main">
@@ -204,8 +267,11 @@ export default function App() {
             logs={logs}
             busy={busy}
             staleProcesses={staleProcesses}
+            intent={paletteIntent}
+            onIntentHandled={() => setPaletteIntent(null)}
             onClearLogs={live.clearLogs}
             onAction={(action) => runApplication(route.applicationId, action)}
+            onSaveLayout={(layout) => saveLayout(route.applicationId, layout)}
             onEdit={() => openApplicationForm(selected)}
             onDelete={() => deleteApplication(selected)}
             onAddProcess={() =>
@@ -284,6 +350,12 @@ export default function App() {
           onClose={() => setDialog(null)}
         />
       )}
+
+      <CommandPalette
+        open={paletteOpen}
+        commands={commands}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   );
 }

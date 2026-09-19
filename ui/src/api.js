@@ -165,6 +165,50 @@ export const getSettings = (signal) => request('GET', '/settings', { signal });
 export const updateSettings = (patch) => request('PATCH', '/settings', { body: patch });
 
 /**
+ * Whether this installation can open a terminal, where one may be opened for this application, and
+ * which of them are already open.
+ * @param {string} applicationId @param {AbortSignal} [signal]
+ * @returns {Promise<{support: {available: boolean, reason: string|null},
+ *                    targets: {processId: string, processName: string, cwd: string}[],
+ *                    sessions: object[]}>}
+ */
+export const listTerminals = (applicationId, signal) =>
+  request('GET', `${appPath(applicationId)}/terminals`, { signal });
+
+/**
+ * Open a shell. `processId` names one of the targets above, never a path — where that process runs
+ * is the manager's to resolve, and a browser has no business naming a directory on this machine.
+ * @param {string} applicationId
+ * @param {{processId?: string, cols?: number, rows?: number}} input
+ */
+export const openTerminal = (applicationId, input) =>
+  request('POST', `${appPath(applicationId)}/terminals`, { body: input });
+
+const terminalPath = (sessionId) => `/terminals/${encodeURIComponent(sessionId)}`;
+
+/**
+ * Keystrokes, verbatim and unbatched. One request per keypress is affordable only because this is
+ * loopback: the alternative is a socket, and a socket would need a second copy of the origin guard.
+ * @param {string} sessionId @param {string} data
+ */
+export const writeTerminal = (sessionId, data) =>
+  request('POST', `${terminalPath(sessionId)}/input`, { body: { data } });
+
+/** @param {string} sessionId @param {number} cols @param {number} rows */
+export const resizeTerminal = (sessionId, cols, rows) =>
+  request('POST', `${terminalPath(sessionId)}/resize`, { body: { cols, rows } });
+
+/** @param {string} sessionId */
+export const closeTerminal = (sessionId) => request('DELETE', terminalPath(sessionId));
+
+/**
+ * Where a terminal's output is followed. An `EventSource` rather than a fetch: the session outlives
+ * the page, so reconnecting to one is normal and the stream replays what was missed.
+ * @param {string} sessionId
+ */
+export const terminalStreamUrl = (sessionId) => `${API}${terminalPath(sessionId)}/stream`;
+
+/**
  * Ask the manager to open the operating system's folder dialog. Resolves when the user has chosen or
  * cancelled — which can be minutes, so there is deliberately no timeout on this side.
  * @param {string} [startAt]
