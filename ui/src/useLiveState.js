@@ -49,6 +49,9 @@ function parseLogBatch(data) {
  */
 export function useLiveState(applicationId) {
   const [applications, setApplications] = useState([]);
+  // False until the first list lands: an empty list before that is "not known yet", not "none", and
+  // the pages must not offer to create the first application to someone who has twenty.
+  const [loaded, setLoaded] = useState(false);
   const [logs, setLogs] = useState([]);
   const [connection, setConnection] = useState('connecting');
   const [error, setError] = useState(null);
@@ -73,6 +76,7 @@ export function useLiveState(applicationId) {
       const next = await listApplications(signal);
       if (ticket !== requestRef.current) return; // an overtaken response would roll the view back
       setApplications(next);
+      setLoaded(true);
       setError(null);
     } catch (err) {
       if (!signal?.aborted) setError(err.message);
@@ -192,6 +196,7 @@ export function useLiveState(applicationId) {
 
   return {
     applications,
+    loaded,
     selected,
     logs,
     connection,

@@ -6,74 +6,75 @@
 :root {
   color-scheme: dark;
 
-  --bg: #0a0d13;
-  --surface: #11151e;
-  --surface-2: #171c27;
-  --glass: #131822;
+  --bg: #08080b;
+  --surface: #131317;
+  --surface-2: #18181d;
+  --glass: #101014;
 
-  --separator: rgb(255 255 255 / 0.06);
-  --border: rgb(255 255 255 / 0.09);
-  --border-strong: rgb(255 255 255 / 0.16);
+  --separator: rgb(255 255 255 / 0.07);
+  --border: rgb(255 255 255 / 0.13);
+  --border-strong: rgb(255 255 255 / 0.2);
 
   --fill-hover: rgb(255 255 255 / 0.05);
-  --control: rgb(255 255 255 / 0.08);
-  --control-hover: rgb(255 255 255 / 0.13);
-  --control-edge: 0 0 0 0.5px rgb(0 0 0 / 0.55), inset 0 0.5px 0 rgb(255 255 255 / 0.1);
+  --control: rgb(255 255 255 / 0.07);
+  --control-hover: rgb(255 255 255 / 0.12);
+  --control-edge: inset 0 0 0 1px rgb(255 255 255 / 0.1);
 
-  --text: #e8ebf1;
-  --text-dim: #959dae;
-  --text-faint: #5f6879;
+  --text: #ededf1;
+  --text-dim: #9b9baa;
+  --text-faint: #7e7e8a;
 
-  --accent: #4f8cff;
-  --accent-fill: #2f6fef;
-  --accent-fill-hover: #3e7cf6;
-  --accent-soft: rgb(79 140 255 / 0.15);
+  --accent: #a394ff;
+  --accent-fill: #6c4fff;
+  --accent-fill-hover: #7d63ff;
+  --accent-soft: rgb(124 92 255 / 0.18);
   --on-accent: #ffffff;
-  --focus: rgb(79 140 255 / 0.5);
+  --focus: rgb(124 92 255 / 0.55);
   --ok: #3ecf8e;
-  --glow: rgb(79 140 255 / 0.22);
+  /* The one thing the dashboard does not have: a faint accent wash behind the hero. */
+  --glow: rgb(124 92 255 / 0.16);
 
   --sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 
-  --radius: 12px;
-  --radius-lg: 16px;
-  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.28);
-  --shadow-raised: 0 10px 28px rgb(0 0 0 / 0.42), 0 1px 2px rgb(0 0 0 / 0.3);
+  --radius: 10px;
+  --radius-lg: 12px;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.45);
 }
 
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
 
-    --bg: #f2f3f6;
+    --bg: #f6f6f8;
     --surface: #ffffff;
-    --surface-2: #f5f6f9;
-    --glass: #fbfcfd;
+    --surface-2: #f7f7f9;
+    --glass: #ffffff;
 
-    --separator: rgb(16 24 40 / 0.07);
-    --border: rgb(16 24 40 / 0.1);
-    --border-strong: rgb(16 24 40 / 0.2);
+    --separator: rgb(18 18 24 / 0.08);
+    --border: rgb(18 18 24 / 0.12);
+    --border-strong: rgb(18 18 24 / 0.22);
 
-    --fill-hover: rgb(16 24 40 / 0.04);
+    --fill-hover: rgb(18 18 24 / 0.04);
     --control: #ffffff;
-    --control-hover: #f6f7f9;
-    --control-edge: 0 0 0 0.5px rgb(16 24 40 / 0.22), 0 1px 1.5px rgb(16 24 40 / 0.08);
+    --control-hover: #f4f4f7;
+    --control-edge: inset 0 0 0 1px rgb(18 18 24 / 0.14);
 
-    --text: #161b24;
-    --text-dim: #5c6675;
-    --text-faint: #8b94a2;
+    --text: #16161c;
+    --text-dim: #5d5d6b;
+    --text-faint: #6b6b78;
 
-    --accent: #2563eb;
-    --accent-fill: #2563eb;
-    --accent-fill-hover: #1d4ed8;
-    --accent-soft: rgb(37 99 235 / 0.1);
-    --focus: rgb(37 99 235 / 0.35);
+    --accent: #5b34e8;
+    --accent-fill: #6c4fff;
+    --accent-fill-hover: #5b3af0;
+    --accent-soft: rgb(108 79 255 / 0.11);
+    --focus: rgb(108 79 255 / 0.4);
     --ok: #12875a;
-    --glow: rgb(37 99 235 / 0.14);
+    --glow: rgb(108 79 255 / 0.1);
 
-    --shadow-card: 0 1px 2px rgb(16 24 40 / 0.05);
-    --shadow-raised: 0 10px 28px rgb(16 24 40 / 0.1), 0 1px 2px rgb(16 24 40 / 0.06);
+    --shadow-card: 0 1px 2px rgb(18 18 24 / 0.07);
+    --shadow-raised: 0 4px 16px rgb(18 18 24 / 0.1);
   }
 }
 

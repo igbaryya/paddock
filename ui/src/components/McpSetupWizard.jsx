@@ -1,6 +1,7 @@
 /**
  * First-run installation for MCP: pick the port agents will connect on. Nothing starts until this
- * completes — the listener is brought up by the configure call at the end.
+ * completes — the listener is brought up by the configure call at the end. It can be put off: the
+ * process manager works without MCP, and the MCP page installs it later.
  */
 import { useState } from 'react';
 import Icon from './Icon.jsx';
@@ -8,9 +9,9 @@ import Modal from './Modal.jsx';
 
 /**
  * @param {{defaultPort?: number, busy?: boolean,
- *          onSubmit: (port: number) => Promise<void>}} props
+ *          onSubmit: (port: number) => Promise<void>, onDismiss: () => void}} props
  */
-export default function McpSetupWizard({ defaultPort = 4600, busy = false, onSubmit }) {
+export default function McpSetupWizard({ defaultPort = 4600, busy = false, onSubmit, onDismiss }) {
   const [port, setPort] = useState(String(defaultPort));
   const [error, setError] = useState(null);
 
@@ -30,7 +31,7 @@ export default function McpSetupWizard({ defaultPort = 4600, busy = false, onSub
   };
 
   return (
-    <Modal title="Install MCP" onClose={() => {}} persistent>
+    <Modal title="Install MCP" onClose={onDismiss} persistent={busy}>
       <form className="mcp-wizard" onSubmit={submit}>
         <p className="hint">
           Agents connect to MCP on its own port, separate from this dashboard. Choose a port that is
@@ -57,6 +58,9 @@ export default function McpSetupWizard({ defaultPort = 4600, busy = false, onSub
           </p>
         )}
         <div className="form-actions">
+          <button type="button" className="btn ghost" disabled={busy} onClick={onDismiss}>
+            Not now
+          </button>
           <button type="submit" className="btn primary" disabled={busy}>
             Install and start MCP
           </button>

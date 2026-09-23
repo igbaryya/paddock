@@ -117,7 +117,7 @@ export default function McpPage({ busy, onAction }) {
           <div className="group-row">
             <div className="row-text">
               <span className="row-title">URL</span>
-              <div className="command-well">
+              <div className="command-well address">
                 <code>{state.url}</code>
                 <CopyButton text={state.url} label="Copy MCP URL" />
               </div>

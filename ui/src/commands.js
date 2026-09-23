@@ -57,6 +57,16 @@ export function buildCommands({
   });
 
   commands.push({
+    id: 'nav-mcp',
+    title: 'MCP',
+    subtitle: 'The agent endpoint: its URL, port and status.',
+    icon: 'braces',
+    keywords: 'agent ai claude cursor endpoint url',
+    group: 'Pages',
+    run: () => navigate(paths.mcp()),
+  });
+
+  commands.push({
     id: 'nav-settings',
     title: 'Settings',
     subtitle: 'Theme, start at login, and install paths.',
@@ -278,12 +288,14 @@ function rankServiceMatch(needle, target) {
   return Math.max(...names.map((name) => rankNameMatch(needle, name)));
 }
 
-/** @param {string} word @returns {'start'|'stop'|'restart'|null} */
+/**
+ * A trailing verb must be spelled out. The last word is as likely a service name as a verb, and a
+ * typo-tolerant match there turns "api shop" into "stop api" — one Enter away from stopping it.
+ * @param {string} word @returns {'start'|'stop'|'restart'|null}
+ */
 function resolveActionWord(word) {
   const lower = word.toLowerCase();
   if (ACTION_VERBS.includes(lower)) return /** @type {'start'|'stop'|'restart'} */ (lower);
-  const fuzzy = fuzzyMatchingVerbs(word);
-  if (fuzzy.length === 1) return fuzzy[0];
   return null;
 }
 

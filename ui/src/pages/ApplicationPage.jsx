@@ -87,7 +87,9 @@ export default function ApplicationPage({
         It may have been deleted, or the link may be out of date.
       </EmptyState>
     ) : (
-      <p className="empty-inline">Loading…</p>
+      <p className="empty-inline" role="status">
+        Loading…
+      </p>
     );
   }
 

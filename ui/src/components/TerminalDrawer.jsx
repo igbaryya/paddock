@@ -8,11 +8,19 @@ import { useEffect, useRef, useState } from 'react';
 const DEFAULT_HEIGHT = 320;
 const MIN_HEIGHT = 160;
 
+/** The canvas keeps at least this much of the window, however tall the panel is dragged. */
+const maxHeight = () => Math.min(window.innerHeight * 0.85, window.innerHeight - 120);
+
+const clampHeight = (height) => Math.min(maxHeight(), Math.max(MIN_HEIGHT, height));
+
 /**
  * @param {{onClose: () => void, children: import('react').ReactNode}} props
  */
 export default function TerminalDrawer({ onClose, children }) {
-  const [height, setHeight] = useState(DEFAULT_HEIGHT);
+  // Clamped from the start too: a short window must not open the panel over most of the canvas.
+  const [height, setHeight] = useState(() =>
+    clampHeight(Math.min(DEFAULT_HEIGHT, window.innerHeight * 0.4))
+  );
   const drawerRef = useRef(null);
   const dragRef = useRef(null);
 
@@ -20,29 +28,39 @@ export default function TerminalDrawer({ onClose, children }) {
     drawerRef.current?.focus({ preventScroll: true });
   }, []);
 
+  // On the panel itself, so only an Escape pressed in here is ours: one pressed in a dialog or the
+  // palette on top never passes through, and they dismiss themselves. Every Escape from in here stops
+  // at the panel, so the canvas drawer listening on window is never closed from inside a terminal.
   useEffect(() => {
+    const drawer = drawerRef.current;
     const onKeyDown = (event) => {
       if (event.key !== 'Escape') return;
-      // Capture and stop: the canvas drawer is listening on window too, and one Escape should dismiss
-      // the panel on top, not every panel that happens to be open.
-      event.stopImmediatePropagation();
+      // The menu is a layer on top and listens on document; let the key reach it.
+      if (event.target.closest('[role="menu"]')) return;
+      event.stopPropagation();
+      // The shell's key, not ours: vim, less and fzf all need Escape.
+      if (event.target.closest('.xterm')) return;
       onClose();
     };
-    window.addEventListener('keydown', onKeyDown, true);
-    return () => window.removeEventListener('keydown', onKeyDown, true);
+    drawer.addEventListener('keydown', onKeyDown);
+    return () => drawer.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  // A window made shorter takes the panel down with it rather than pushing the canvas off screen.
+  useEffect(() => {
+    const onResize = () => setHeight(clampHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const onResizeStart = (event) => {
     event.preventDefault();
     dragRef.current = { startY: event.clientY, startHeight: height };
-    const max = Math.min(window.innerHeight * 0.85, window.innerHeight - 120);
 
     const onMove = (moveEvent) => {
       if (!dragRef.current) return;
       const delta = dragRef.current.startY - moveEvent.clientY;
-      setHeight(
-        Math.min(max, Math.max(MIN_HEIGHT, dragRef.current.startHeight + delta))
-      );
+      setHeight(clampHeight(dragRef.current.startHeight + delta));
     };
 
     const onUp = () => {

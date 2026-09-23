@@ -126,7 +126,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
               ref={inputRef}
               type="search"
               className="search command-palette-input"
-              placeholder="Search, restart console, or appna console…"
+              placeholder="Search, or type start, stop or restart and a name…"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={onInputKeyDown}

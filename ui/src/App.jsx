@@ -5,7 +5,7 @@
  * happened — so nothing here keeps an optimistic copy of runtime state that could disagree with the
  * processes on the machine.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
 import { buildCommands } from './commands.js';
 import { useLiveState } from './useLiveState.js';
@@ -71,6 +71,9 @@ export default function App() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteIntent, setPaletteIntent] = useState(null);
   const [mcpWizardOpen, setMcpWizardOpen] = useState(false);
+  // "Not now" holds for this visit: the wizard is offered on every reconnect, and someone who only
+  // wants the process manager must not be asked again each time the stream blips.
+  const mcpWizardDismissedRef = useRef(false);
 
   /**
    * Run one manager command. `key` is the application or process the command belongs to, so only
@@ -99,7 +102,7 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (connection !== 'live') return;
+    if (connection !== 'live' || mcpWizardDismissedRef.current) return;
     api.getMcp().then(
       (state) => {
         if (!state.configured) setMcpWizardOpen(true);
@@ -278,9 +281,12 @@ export default function App() {
         {route.name === 'overview' && (
           <OverviewPage
             applications={applications}
+            loaded={live.loaded}
+            unreachable={Boolean(live.error)}
             favicons={favicons}
             ports={ports}
             busy={busy}
+            onRetry={() => reload()}
             onCreate={() => openApplicationForm()}
             onAction={runApplication}
           />
@@ -291,7 +297,7 @@ export default function App() {
             application={selected}
             favicons={favicons}
             /* The list having arrived is what turns "still loading" into "no such application". */
-            loaded={applications.length > 0}
+            loaded={live.loaded}
             logs={logs}
             busy={busy}
             staleProcesses={staleProcesses}
@@ -391,7 +397,14 @@ export default function App() {
       />
 
       {mcpWizardOpen && (
-        <McpSetupWizard busy={busy.has('mcp')} onSubmit={installMcp} />
+        <McpSetupWizard
+          busy={busy.has('mcp')}
+          onSubmit={installMcp}
+          onDismiss={() => {
+            mcpWizardDismissedRef.current = true;
+            setMcpWizardOpen(false);
+          }}
+        />
       )}
     </div>
   );
