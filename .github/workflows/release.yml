@@ -91,10 +91,27 @@ jobs:
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
             exit 0
           fi
-          {
-            echo "CSC_LINK=$MAC_CERTIFICATE"
-            echo "CSC_KEY_PASSWORD=$MAC_CERTIFICATE_PASSWORD"
-          } >> "$GITHUB_ENV"
+          # Imported here rather than through CSC_LINK: electron-builder unlocks its own keychain with
+          # the certificate's password instead of the keychain's, which macOS 26 refuses. It signs with
+          # the identity it finds in CSC_KEYCHAIN instead.
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(openssl rand -base64 32)"
+          certificate="$RUNNER_TEMP/certificate.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          printf '%s' "$MAC_CERTIFICATE" | base64 --decode > "$certificate"
+          security import "$certificate" -k "$keychain" -P "$MAC_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/productbuild
+          rm "$certificate"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          # A certificate without its key imports fine and then signs nothing; stop here instead.
+          if ! security find-identity -v -p codesigning "$keychain" | grep -q "Developer ID Application"; then
+            echo "::error::MAC_CERTIFICATE holds no Developer ID Application identity with its private key."
+            exit 1
+          fi
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
           if [ -z "$APPLE_API_KEY_CONTENT" ]; then
             echo "::warning::APPLE_API_KEY is not set: this macOS build is signed but not notarised, and Gatekeeper blocks it."
             exit 0
