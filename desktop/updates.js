@@ -5,10 +5,13 @@
  *
  * What the updater is doing is kept as one state, which the tray and the dashboard both show.
  *
- * Only an installed app updates: a checkout has no feed to read, and its state stays 'unavailable'.
+ * Only an installed app updates: a checkout, or a build packed locally without publishing, has no feed
+ * to read, and its state stays 'unavailable'.
  * macOS will not install an update into an unsigned app, so an unsigned build finds updates and fails
  * to apply them; that failure is logged, and shows as an 'error' state.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 import { app } from 'electron';
 import electronUpdater from 'electron-updater';
 
@@ -17,6 +20,9 @@ const { autoUpdater } = electronUpdater;
 
 /** A check is a request to GitHub, and releases are rare; an app left running still sees one the same day. */
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1_000;
+
+/** Long enough for any error's own sentence, short enough for a line in Settings. */
+const ERROR_TEXT_MAX = 160;
 
 /**
  * @typedef {object} UpdateState
@@ -56,8 +62,24 @@ export function onUpdateState(listener) {
   return () => listeners.delete(listener);
 }
 
+/**
+ * Where a packaged app keeps its feed, written by electron-builder only for a build that publishes.
+ * A local `--dir` build has none, and would otherwise fail every check.
+ */
+const hasFeed = () => fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'));
+
+/**
+ * What the user sees of a failure: its first line, which is what it is about. electron-updater's
+ * GitHub errors go on to carry the response, which belongs in the log.
+ * @param {Error} err
+ */
+const shortError = (err) => {
+  const line = err.message.split('\n', 1)[0];
+  return line.length > ERROR_TEXT_MAX ? `${line.slice(0, ERROR_TEXT_MAX - 1)}…` : line;
+};
+
 export function watchForUpdates() {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged || !hasFeed()) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   followUpdater();
@@ -77,7 +99,7 @@ function followUpdater() {
   autoUpdater.on('update-downloaded', ({ version }) => setState({ status: 'ready', version, progress: 100 }));
   autoUpdater.on('error', (err) => {
     console.error(`[paddock] update: ${err.message}`);
-    setState({ status: 'error', error: err.message, progress: null, checkedAt: now() });
+    setState({ status: 'error', error: shortError(err), progress: null, checkedAt: now() });
   });
 }
 
