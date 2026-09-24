@@ -66,6 +66,18 @@ const routes = [
   route('POST', '/api/applications/:appId/processes/:procId/restart', ({ params }) =>
     service.restartProcess(params.appId, params.procId)),
 
+  // Source control, read-only and dashboard-only: agents already have a shell for git.
+  route('GET', '/api/applications/:appId/processes/:procId/git', ({ params }) =>
+    service.gitStatus(params.appId, params.procId)),
+  route('GET', '/api/applications/:appId/processes/:procId/git/diff', ({ params, url }) =>
+    service.gitDiff(params.appId, params.procId, {
+      path: url.searchParams.get('path') ?? '',
+      staged: url.searchParams.get('staged') === '1',
+      untracked: url.searchParams.get('untracked') === '1',
+    })),
+  route('GET', '/api/applications/:appId/processes/:procId/git/log', ({ params, url }) =>
+    service.gitLog(params.appId, params.procId, { limit: numberParam(url, 'limit') })),
+
   route('GET', '/api/applications/:appId/logs', ({ params, url }) =>
     service.readLogs(logQuery(params.appId, url))),
 

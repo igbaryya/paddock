@@ -12,6 +12,7 @@ import * as logStore from './log-store.js';
 import * as ports from './ports.js';
 import * as workspace from './workspace.js';
 import * as favicons from './favicons.js';
+import * as git from './git.js';
 import * as loginItem from './login-item.js';
 import * as cluster from './postgres/cluster.js';
 import * as lifecycle from './postgres/lifecycle.js';
@@ -1283,6 +1284,42 @@ export const listDirectory = (directory) => workspace.listDirectory(directory);
 
 /** @param {string} directory absolute path — the directory the command will actually run in */
 export const inspectDirectory = (directory) => workspace.inspect(directory);
+
+// --- source control --------------------------------------------------------------------------
+
+/**
+ * A process's repository, read-only, for the dashboard's Source control tab. Asked of the directory
+ * the process runs in — the same one a terminal opens at — and git finds the repository around it.
+ *
+ * Every git failure is answered as a 400 with git's own words: not a repository, git missing, a
+ * repository too slow to read. None of them is Paddock's bug, and a tab that polls every few seconds
+ * must not fill the server log with stacks for a machine that simply has no git.
+ * @param {string} applicationId @param {string} processId
+ * @param {(dir: string) => Promise<object>} ask
+ */
+async function askGit(applicationId, processId, ask) {
+  const proc = findProcess(await applications.getApplication(applicationId), processId);
+  try {
+    return await ask(effectiveCwd(proc));
+  } catch (err) {
+    if (err instanceof git.GitError) throw new applications.ValidationError(err.message);
+    throw err;
+  }
+}
+
+/** @param {string} applicationId @param {string} processId */
+export const gitStatus = (applicationId, processId) => askGit(applicationId, processId, git.status);
+
+/**
+ * @param {string} applicationId @param {string} processId
+ * @param {{path: string, staged?: boolean, untracked?: boolean}} file
+ */
+export const gitDiff = (applicationId, processId, file) =>
+  askGit(applicationId, processId, (dir) => git.diff(dir, file));
+
+/** @param {string} applicationId @param {string} processId @param {{limit?: number}} [options] */
+export const gitLog = (applicationId, processId, options) =>
+  askGit(applicationId, processId, (dir) => git.log(dir, options));
 
 /** Runtime changed, so the cached answer to "who owns this port" is no longer trustworthy. */
 manager.events.on('status', () => ports.invalidate());
