@@ -19,6 +19,8 @@ import SettingsGroup from '../components/SettingsGroup.jsx';
 import Switch from '../components/Switch.jsx';
 import ThemeSwitcher from '../components/ThemeSwitcher.jsx';
 import Toolbar from '../components/Toolbar.jsx';
+import UpdatesGroup from '../components/UpdatesGroup.jsx';
+import { useDesktopUpdates } from '../useDesktopUpdates.js';
 import { useTheme } from '../useTheme.js';
 
 /** @param {{children: React.ReactNode}} props a row that only says something */
@@ -269,6 +271,7 @@ export default function SettingsPage({ applications, isBusy, onAutoStart }) {
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const updates = useDesktopUpdates();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -304,6 +307,7 @@ export default function SettingsPage({ applications, isBusy, onAutoStart }) {
             <span>{error}</span>
           </p>
         )}
+        {updates && <UpdatesGroup updates={updates} />}
         <Appearance />
         <Startup
           startAtLogin={settings?.startAtLogin ?? null}

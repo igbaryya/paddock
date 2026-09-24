@@ -9,6 +9,7 @@ import StatusDot from './StatusDot.jsx';
 import Icon, { Logo } from './Icon.jsx';
 import ThemeSwitcher from './ThemeSwitcher.jsx';
 import { Link, paths } from '../router.jsx';
+import { useDesktopUpdates } from '../useDesktopUpdates.js';
 
 const CONNECTION_LABEL = {
   connecting: 'connecting…',
@@ -26,6 +27,9 @@ const MOD_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(nav
  *          onCreate: () => void, onOpenPalette: () => void}} props
  */
 export default function Sidebar({ applications, route, connection, portCount, onCreate, onOpenPalette }) {
+  // Only a downloaded update earns a place here; checking and failures stay on the Settings page.
+  const updates = useDesktopUpdates();
+  const updateReady = updates?.state?.status === 'ready';
   const onOverview = route.name === 'overview';
   const onPorts = route.name === 'ports';
   const onMcp = route.name === 'mcp';
@@ -123,6 +127,12 @@ export default function Sidebar({ applications, route, connection, portCount, on
 
       {/* The always-there controls, pinned together so each is one click from any page. */}
       <div className="sidebar-foot">
+        {updateReady && (
+          <Link to={paths.settings()} className="nav-item sidebar-update">
+            <Icon name="arrow-down" />
+            Update {updates.state.version} ready
+          </Link>
+        )}
         <ThemeSwitcher />
         <button type="button" className="nav-item sidebar-add" onClick={onCreate}>
           <Icon name="plus" />

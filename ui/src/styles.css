@@ -562,6 +562,12 @@ textarea {
   gap: var(--space-1);
 }
 
+/* An update waiting to be installed: the accent, because it is the one thing down here to act on. */
+.sidebar-update {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
 /* Fills the sidebar's width in three equal parts, so the labels never wrap or truncate. */
 .sidebar .theme-switcher {
   display: grid;
@@ -2856,6 +2862,10 @@ p.card-processes {
 .row-title {
   font-size: 13px;
   font-weight: 500;
+}
+
+.row-sub.danger {
+  color: var(--danger);
 }
 
 .row-sub {
