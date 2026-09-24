@@ -32,12 +32,21 @@ function assetsByKind(assets) {
   return map;
 }
 
-function detectKind() {
+/**
+ * Which download to put first. Every Mac reports "MacIntel" in its user agent, so the architecture
+ * comes from Client Hints where the browser offers them (Chromium does); Safari and Firefox do not,
+ * and fall back to Apple silicon, the Mac most people have. Every build is listed below either way.
+ */
+async function detectKind() {
   const platform = navigator.userAgentData?.platform || navigator.platform || '';
   const ua = navigator.userAgent;
   if (/Win/i.test(platform) || /Windows NT/i.test(ua)) return 'win';
-  // Apple silicon still often reports MacIntel in the UA; ARM is the default Mac in 2026.
-  if (/Mac/i.test(platform) || /Mac OS/i.test(ua)) return 'mac-arm64';
+  try {
+    const { architecture } = await navigator.userAgentData.getHighEntropyValues(['architecture']);
+    if (architecture === 'x86') return 'mac-x64';
+  } catch {
+    // No Client Hints in this browser: keep the default.
+  }
   return 'mac-arm64';
 }
 
@@ -175,7 +184,7 @@ async function main() {
       return;
     }
     const latest = releases[0];
-    renderLatest(latest, detectKind());
+    renderLatest(latest, await detectKind());
     renderPlatforms(latest);
     renderHistory(releases);
   } catch (err) {
