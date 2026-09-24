@@ -15,12 +15,14 @@ import StatusDot from './StatusDot.jsx';
 import Icon from './Icon.jsx';
 import CopyButton from './CopyButton.jsx';
 import LogViewer from './LogViewer.jsx';
+import SourceControl from './SourceControl.jsx';
 import SqlConsole from './SqlConsole.jsx';
 import Drawer, { DrawerEmpty, DrawerFacts, DrawerSection } from './Drawer.jsx';
 import { ALIVE, exitSummary, formatUptime, uptimeOf } from '../format.js';
 
 const OUTPUT_TAB = { id: 'output', label: 'Output' };
 const OVERVIEW_TAB = { id: 'overview', label: 'Overview' };
+const GIT_TAB = { id: 'git', label: 'Source control' };
 
 const formatWhen = (iso) => {
   const at = new Date(iso);
@@ -334,7 +336,8 @@ export default function NodeDetails({
       leading={<Icon name={derived ? 'database' : 'terminal'} />}
       title={process.name}
       subtitle={<StatusDot status={process.status} showLabel />}
-      tabs={[OVERVIEW_TAB, OUTPUT_TAB]}
+      // A PostgreSQL server's directory is its data directory, never a repository.
+      tabs={derived ? [OVERVIEW_TAB, OUTPUT_TAB] : [OVERVIEW_TAB, OUTPUT_TAB, GIT_TAB]}
       activeTab={tab}
       onTabChange={setTab}
       onClose={onClose}
@@ -358,6 +361,7 @@ export default function NodeDetails({
           processId={process.id}
         />
       )}
+      {tab === 'git' && <SourceControl applicationId={application.id} processId={process.id} />}
     </Drawer>
   );
 }

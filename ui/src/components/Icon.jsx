@@ -24,6 +24,7 @@ import {
   Database,
   ExternalLink,
   Folder,
+  GitBranch,
   Globe,
   Info,
   LayoutGrid,
@@ -78,6 +79,8 @@ const GLYPHS = {
   check: Check,
   copy: Copy,
   folder: Folder,
+  // Source control: the branch glyph every editor uses for it.
+  branch: GitBranch,
   back: ChevronLeft,
   'arrow-down': ArrowDown,
   // Activity: a pulse trace — something is alive, which is what "running" means on a summary.

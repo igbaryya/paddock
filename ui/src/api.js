@@ -117,6 +117,29 @@ export function readLogs(query, signal) {
 }
 
 /**
+ * A process's repository, read-only: what is changed, one file's diff, and the history behind it.
+ * All three say `{repo: false}` / fail with the manager's own words when the directory is not one.
+ * @param {string} applicationId @param {string} processId @param {AbortSignal} [signal]
+ */
+export const getGitStatus = (applicationId, processId, signal) =>
+  request('GET', `${procPath(applicationId, processId)}/git`, { signal });
+
+/**
+ * @param {string} applicationId @param {string} processId
+ * @param {{path: string, staged?: boolean, untracked?: boolean}} file @param {AbortSignal} [signal]
+ */
+export function getGitDiff(applicationId, processId, file, signal) {
+  const search = new URLSearchParams({ path: file.path });
+  if (file.staged) search.set('staged', '1');
+  if (file.untracked) search.set('untracked', '1');
+  return request('GET', `${procPath(applicationId, processId)}/git/diff?${search}`, { signal });
+}
+
+/** @param {string} applicationId @param {string} processId @param {AbortSignal} [signal] */
+export const getGitLog = (applicationId, processId, signal) =>
+  request('GET', `${procPath(applicationId, processId)}/git/log`, { signal });
+
+/**
  * The listening-port list. `force` makes the manager rescan the OS instead of answering from its
  * cache — used by the Refresh control, where a stale answer is the whole complaint.
  * @param {{force?: boolean}} [options] @param {AbortSignal} [signal]
