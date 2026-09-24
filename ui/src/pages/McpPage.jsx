@@ -1,9 +1,10 @@
 /**
- * MCP installation and runtime: the port agents use, whether the listener is up, and a short audit
- * of what happened to it.
+ * MCP installation and runtime: the port agents use, whether the listener is up and why not, which
+ * agents are connected and what they called, and a short history of the listener itself.
  */
 import { useEffect, useId, useState } from 'react';
 import * as api from '../api.js';
+import AgentActivity from '../components/AgentActivity.jsx';
 import CopyButton from '../components/CopyButton.jsx';
 import Icon from '../components/Icon.jsx';
 import IconButton from '../components/IconButton.jsx';
@@ -25,9 +26,10 @@ const formatWhen = (iso) => {
 };
 
 /**
- * @param {{busy: boolean, onAction: (action: string, body?: object) => Promise<void>}} props
+ * @param {{busy: boolean, live: {sessions: object[]|null, calls: object[]},
+ *          onAction: (action: string, body?: object) => Promise<void>}} props
  */
-export default function McpPage({ busy, onAction }) {
+export default function McpPage({ busy, live, onAction }) {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [portDraft, setPortDraft] = useState('');
@@ -85,6 +87,10 @@ export default function McpPage({ busy, onAction }) {
       {toolbar}
       {/* A refresh that failed after an action: what is shown below may be out of date. */}
       {error && <ErrorNotice message={`Could not refresh: ${error}`} />}
+      {/* Enabled but not listening is the one state where an agent silently cannot connect. */}
+      {state.lastError && !state.running && (
+        <ErrorNotice message={`MCP could not start: ${state.lastError.message}`} />
+      )}
 
       <SettingsGroup
         title="Status"
@@ -192,7 +198,9 @@ export default function McpPage({ busy, onAction }) {
         )}
       </SettingsGroup>
 
-      <SettingsGroup title="Audit">
+      <AgentActivity live={live} />
+
+      <SettingsGroup title="Listener history">
         {state.audit.length === 0 ? (
           <p className="empty-inline">Nothing recorded yet.</p>
         ) : (

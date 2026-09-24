@@ -2924,6 +2924,111 @@ p.card-processes {
   white-space: nowrap;
 }
 
+/* Agent activity: one row per tool call, the tool name leading in monospace because it is the thing
+   an agent actually invoked; a failed call is the one row that takes a colour. */
+.audit-session-state {
+  flex: none;
+  width: 44px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.audit-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.audit-call {
+  border-top: 1px solid var(--separator);
+}
+
+.audit-call:first-child {
+  border-top: 0;
+}
+
+.audit-call-row {
+  display: grid;
+  grid-template-columns: 12px 76px minmax(0, 1.2fr) minmax(0, 1fr) 64px 48px;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 7px 14px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.audit-call-row:hover {
+  background: var(--fill-hover);
+}
+
+.audit-call-chevron {
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+
+.audit-call-row[aria-expanded='true'] .audit-call-chevron {
+  transform: rotate(90deg);
+}
+
+.audit-call-tool {
+  overflow: hidden;
+  font-family: var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-call-client {
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-call-duration {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  text-align: right;
+}
+
+.audit-call-result {
+  font-size: 11px;
+  font-weight: 550;
+  text-align: right;
+  color: var(--text-faint);
+}
+
+.audit-call-result.failed {
+  color: var(--danger);
+}
+
+.audit-call-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 14px 10px 34px;
+}
+
+.audit-call-detail pre {
+  margin: 0;
+  max-height: 280px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--terminal);
+  border-radius: var(--radius-sm);
+  box-shadow: inset 0 0 0 1px var(--separator);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .mcp-wizard .form-actions {
   justify-content: flex-end;
 }

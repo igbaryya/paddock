@@ -200,6 +200,23 @@ export const startMcp = () => request('POST', '/mcp/start');
 export const stopMcp = () => request('POST', '/mcp/stop');
 export const restartMcp = () => request('POST', '/mcp/restart');
 
+/** Agents connected over MCP right now, most recently seen first. @param {AbortSignal} [signal] */
+export const listMcpSessions = (signal) => request('GET', '/mcp/sessions', { signal });
+
+/**
+ * The tool calls agents made, newest first. The audit keeps arguments with SQL parameter values
+ * reduced to their types.
+ * @param {{sessionId?: string, tool?: string, limit?: number}} [query] @param {AbortSignal} [signal]
+ */
+export function listMcpCalls(query = {}, signal) {
+  const search = new URLSearchParams();
+  if (query.sessionId) search.set('sessionId', query.sessionId);
+  if (query.tool) search.set('tool', query.tool);
+  if (query.limit != null) search.set('limit', String(query.limit));
+  const qs = search.toString();
+  return request('GET', `/mcp/calls${qs ? `?${qs}` : ''}`, { signal });
+}
+
 /**
  * Whether this installation can open a terminal, where one may be opened for this application, and
  * which of them are already open.

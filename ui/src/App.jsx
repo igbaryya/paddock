@@ -333,7 +333,7 @@ export default function App() {
         )}
 
         {route.name === 'mcp' && (
-          <McpPage busy={busy.has('mcp')} onAction={runMcp} />
+          <McpPage busy={busy.has('mcp')} live={live.mcp} onAction={runMcp} />
         )}
 
         {route.name === 'settings' && (

@@ -13,6 +13,8 @@ import { EVENTS_URL, listApplications, listPorts, readLogs } from './api.js';
 
 /** The manager's buffer is bounded, so the browser's has to be too. */
 const MAX_LOG_LINES = 2_000;
+/** The live tail of agent tool calls kept in the browser; older ones are fetched from the audit. */
+const MAX_MCP_CALLS = 500;
 /** Starting an application emits a burst of status events; one refetch for the burst is enough. */
 const RELOAD_COALESCE_MS = 150;
 
@@ -60,6 +62,9 @@ export function useLiveState(applicationId) {
   const [streamEpoch, setStreamEpoch] = useState(0);
   // null until the first scan lands, which the table shows as "scanning…" rather than as "no ports".
   const [ports, setPorts] = useState({ ports: null, scannedAt: null, degraded: [] });
+  // What agents are doing over MCP, as it happens: `sessions` is null until the first change is
+  // pushed (the MCP page fetches the current list itself), and `calls` only holds what arrived live.
+  const [mcp, setMcp] = useState({ sessions: null, calls: [] });
 
   // The route names the application; this is only the loaded copy of it, which is null both before
   // the first fetch lands and when the id in the URL does not exist.
@@ -173,6 +178,19 @@ export function useLiveState(applicationId) {
     source.addEventListener('status', scheduleReload);
     source.addEventListener('applications', scheduleReload);
     source.addEventListener('log', (event) => appendLogs(parseLogBatch(event.data)));
+    source.addEventListener('mcp', (event) => {
+      let payload;
+      try {
+        payload = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (payload.kind === 'sessions' && Array.isArray(payload.sessions)) {
+        setMcp((prev) => ({ ...prev, sessions: payload.sessions }));
+      } else if (payload.kind === 'call' && payload.call) {
+        setMcp((prev) => ({ ...prev, calls: [payload.call, ...prev.calls].slice(0, MAX_MCP_CALLS) }));
+      }
+    });
     source.addEventListener('ports', (event) => {
       // An unreadable frame is dropped rather than thrown: one bad payload must not take down the
       // stream that also carries status and logs.
@@ -206,5 +224,6 @@ export function useLiveState(applicationId) {
     clearLogs,
     ports,
     refreshPorts,
+    mcp,
   };
 }

@@ -42,8 +42,13 @@ export default function TerminalMenu({
     return () => controller.abort();
   }, [applicationId]);
 
+  // The items arrive after the menu opens, so focus moves in once they exist — before that there is
+  // nothing to land on, and the arrow keys would be pressed at the button that opened it.
   useEffect(() => {
-    menuRef.current?.querySelector('button')?.focus();
+    if (support) menuRef.current?.querySelector('[role="menuitem"]')?.focus();
+  }, [support]);
+
+  useEffect(() => {
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
