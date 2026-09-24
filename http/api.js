@@ -118,6 +118,10 @@ const routes = [
   route('POST', '/api/mcp/start', () => service.startMcp()),
   route('POST', '/api/mcp/stop', () => service.stopMcp()),
   route('POST', '/api/mcp/restart', () => service.restartMcp()),
+  // The agent audit. Dashboard-only on purpose: an agent does not get to read, or page through,
+  // the record of what agents did.
+  route('GET', '/api/mcp/sessions', () => service.listMcpSessions()),
+  route('GET', '/api/mcp/calls', ({ url }) => service.listMcpCalls(mcpCallQuery(url))),
 
   route('GET', '/api/settings', () => service.getSettings()),
   route('PATCH', '/api/settings', async ({ req }) => service.updateSettings(await readJsonBody(req))),
@@ -201,6 +205,12 @@ const logQuery = (applicationId, url) => ({
   limit: numberParam(url, 'limit'),
   sinceSeq: numberParam(url, 'sinceSeq'),
   stream: streamParam(url),
+});
+
+const mcpCallQuery = (url) => ({
+  sessionId: url.searchParams.get('sessionId') || undefined,
+  tool: url.searchParams.get('tool') || undefined,
+  limit: numberParam(url, 'limit'),
 });
 
 const CODE_BY_STATUS = { 400: 'validation_error', 404: 'not_found', 500: 'internal_error' };

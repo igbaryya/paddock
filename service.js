@@ -19,9 +19,11 @@ import * as discovery from './postgres/discovery.js';
 import * as pool from './postgres/pool.js';
 import * as catalog from './postgres/catalog.js';
 import * as admin from './postgres/admin.js';
-import { DATA_DIR, MCP_PORT_OVERRIDE, ROOT_DIR } from './config.js';
+import { DATA_DIR, MCP_AUTO_CONFIGURE, MCP_PORT_OVERRIDE, ROOT_DIR } from './config.js';
 import * as mcpListener from './mcp-listener.js';
 import * as mcpPrefs from './mcp-preferences.js';
+import * as mcpSessions from './mcp-sessions.js';
+import * as mcpAudit from './mcp-audit.js';
 
 /**
  * Re-exported so `http/` never has to reach past this layer for runtime events. PostgreSQL servers
@@ -846,6 +848,13 @@ export async function discoverClusters() {
 
 const effectiveMcpPort = (prefs) => MCP_PORT_OVERRIDE ?? prefs.port;
 
+/**
+ * Why the listener is not up, when it should be. Runtime state rather than a preference: it
+ * describes this run, and a restart that binds fine must not come up still reporting the old error.
+ * @type {{at: string, code: string|null, message: string}|null}
+ */
+let mcpLastError = null;
+
 const mcpView = async () => {
   const prefs = await mcpPrefs.read();
   const runtime = mcpListener.status();
@@ -860,6 +869,7 @@ const mcpView = async () => {
     url: runtime.running ? mcpPrefs.mcpUrl(runtime.port) : port ? mcpPrefs.mcpUrl(port) : null,
     lastStartedAt: prefs.lastStartedAt,
     lastStoppedAt: prefs.lastStoppedAt,
+    lastError: mcpLastError,
     audit: prefs.audit,
   };
 };
@@ -870,6 +880,40 @@ export async function getMcp() {
 }
 
 /**
+ * Bind the listener and record the outcome either way: a failure is kept for the view and the
+ * audit before it is rethrown, so the dashboard can say why MCP is down instead of just that it is.
+ * @param {number} port
+ * @param {string} action audit action for a successful bind
+ * @returns {Promise<number>} the port actually bound
+ */
+async function bindMcp(port, action) {
+  let bound;
+  try {
+    bound = await mcpListener.start(port);
+  } catch (err) {
+    mcpLastError = { at: new Date().toISOString(), code: err.code ?? null, message: err.message };
+    await mcpPrefs.update((prefs) => {
+      mcpPrefs.appendAudit(prefs, 'start_failed', `port ${port}: ${err.message}`);
+      return prefs;
+    });
+    throw err;
+  }
+  mcpLastError = null;
+  await mcpPrefs.update((prefs) => {
+    mcpPrefs.appendAudit(prefs, action, `listening on ${bound}`);
+    return { ...prefs, enabled: true, lastStartedAt: new Date().toISOString() };
+  });
+  console.log(`[paddock] MCP  ${mcpPrefs.mcpUrl(bound)}`);
+  return bound;
+}
+
+/** Sessions first: an open SSE stream would otherwise hold the listener's close open forever. */
+async function unbindMcp() {
+  await mcpSessions.closeAll();
+  await mcpListener.stop();
+}
+
+/**
  * First-run installation: pick a port, mark configured, and start the listener.
  * @param {{port: number}} input
  */
@@ -877,18 +921,15 @@ export async function configureMcp(input) {
   const port = mcpPrefs.validatePort(input.port);
   await mcpPrefs.update((prefs) => {
     mcpPrefs.appendAudit(prefs, 'configure', `port ${port}`);
-    return {
-      ...prefs,
-      port,
-      configured: true,
-      enabled: true,
-    };
+    return { ...prefs, port, configured: true, enabled: true };
   });
-  await startMcp();
-  return mcpView();
+  if (mcpListener.status().running) return restartMcp();
+  return startMcp();
 }
 
 /**
+ * One decision, then one action: a port change on a running listener is a restart whether or not
+ * the same patch also says `enabled: true`.
  * @param {{port?: number, enabled?: boolean}} patch
  */
 export async function updateMcp(patch) {
@@ -904,7 +945,6 @@ export async function updateMcp(patch) {
     );
   }
 
-  const restartNeeded = patch.port !== undefined && mcpListener.status().running;
   await mcpPrefs.update((prefs) => {
     if (patch.port !== undefined) {
       mcpPrefs.appendAudit(prefs, 'port', String(patch.port));
@@ -918,9 +958,10 @@ export async function updateMcp(patch) {
     return prefs;
   });
 
-  if (patch.enabled === false) await stopMcp();
-  if (patch.enabled === true) await startMcp();
-  if (restartNeeded) await restartMcp();
+  const running = mcpListener.status().running;
+  if (patch.enabled === false) return stopMcp();
+  if (patch.port !== undefined && running) return restartMcp();
+  if (patch.enabled === true) return startMcp();
   return mcpView();
 }
 
@@ -928,74 +969,132 @@ export async function updateMcp(patch) {
 export async function startMcp() {
   const prefs = await mcpPrefs.read();
   const port = effectiveMcpPort(prefs);
-  if (!port) {
-    throw new applications.ValidationError('MCP is not installed — choose a port first');
-  }
-  if (!prefs.configured && MCP_PORT_OVERRIDE === null) {
+  if (!port || (!prefs.configured && MCP_PORT_OVERRIDE === null)) {
     throw new applications.ValidationError('MCP is not installed — choose a port first');
   }
   if (mcpListener.status().running) return mcpView();
-
-  const bound = await mcpListener.start(port);
-  await mcpPrefs.update((current) => {
-    mcpPrefs.appendAudit(current, 'start', `listening on ${bound}`);
-    return {
-      ...current,
-      enabled: true,
-      lastStartedAt: new Date().toISOString(),
-    };
-  });
-  console.log(`[paddock] MCP  http://${mcpPrefs.mcpUrl(bound)?.replace('http://', '') ?? bound}`);
+  await bindMcp(port, 'start');
   return mcpView();
 }
 
 /** @returns {Promise<object>} */
 export async function stopMcp() {
   if (!mcpListener.status().running) return mcpView();
-  await mcpListener.stop();
+  await unbindMcp();
   await mcpPrefs.update((prefs) => {
     mcpPrefs.appendAudit(prefs, 'stop', null);
-    return {
-      ...prefs,
-      enabled: false,
-      lastStoppedAt: new Date().toISOString(),
-    };
+    return { ...prefs, enabled: false, lastStoppedAt: new Date().toISOString() };
   });
   return mcpView();
 }
 
-/** @returns {Promise<object>} */
+/**
+ * Stop, then bind the configured port. When that port is taken, the port that was serving a moment
+ * ago is bound again, so a bad port change leaves agents where they were rather than cut off — and
+ * the error still reaches the caller, since the change they asked for did not happen.
+ * @returns {Promise<object>}
+ */
 export async function restartMcp() {
   const prefs = await mcpPrefs.read();
   const port = effectiveMcpPort(prefs);
   if (!port) throw new applications.ValidationError('MCP is not installed — choose a port first');
-  const bound = await mcpListener.restart(port);
-  await mcpPrefs.update((current) => {
-    mcpPrefs.appendAudit(current, 'restart', `listening on ${bound}`);
-    return {
-      ...current,
-      enabled: true,
-      lastStartedAt: new Date().toISOString(),
-    };
-  });
-  console.log(`[paddock] MCP  http://${mcpPrefs.mcpUrl(bound)?.replace('http://', '') ?? bound}`);
+  const previous = mcpListener.status().port;
+  await unbindMcp();
+  try {
+    await bindMcp(port, 'restart');
+  } catch (err) {
+    if (previous && previous !== port) {
+      await bindMcp(previous, 'restore').catch(() => {});
+    }
+    throw err;
+  }
   return mcpView();
 }
 
-/** Start MCP after the UI server is ready when installation is complete. */
+/**
+ * Start MCP once the UI server is ready. A fresh install with auto-configure on picks the default
+ * port — or any free one, when something else already holds it — and keeps the port it got, so the
+ * URL an agent was given stays valid across restarts. A failure is logged and kept for the view:
+ * the dashboard has to come up either way.
+ */
 export async function bootstrapMcp() {
   const prefs = await mcpPrefs.read();
-  const port = effectiveMcpPort(prefs);
-  if (!port) return;
-  if (!prefs.configured && MCP_PORT_OVERRIDE === null) return;
-  if (!prefs.enabled && MCP_PORT_OVERRIDE === null) return;
+  const installed = prefs.configured || MCP_PORT_OVERRIDE !== null;
   try {
-    await mcpListener.start(port);
-    console.log(`[paddock] MCP  http://${mcpPrefs.mcpUrl(mcpListener.status().port)?.replace('http://', '') ?? port}`);
+    if (!installed && MCP_AUTO_CONFIGURE) {
+      await autoConfigureMcp();
+      return;
+    }
+    if (!installed) return;
+    if (!prefs.enabled && MCP_PORT_OVERRIDE === null) return;
+    await bindMcp(effectiveMcpPort(prefs), 'start');
   } catch (err) {
     console.error(`[paddock] MCP did not start: ${err.message}`);
   }
 }
+
+async function autoConfigureMcp() {
+  let bound;
+  try {
+    bound = await bindMcp(mcpPrefs.DEFAULT_MCP_PORT, 'auto_configure');
+  } catch (err) {
+    if (err.code !== 'EADDRINUSE') throw err;
+    bound = await bindMcp(0, 'auto_configure');
+  }
+  await mcpPrefs.update((prefs) => ({ ...prefs, port: bound, configured: true, enabled: true }));
+}
+
+// --- MCP sessions and audit ------------------------------------------------------------------
+//
+// The HTTP layer owns the transports; this layer owns what is known about them. Every change is
+// pushed on `events` as `mcp`, so an open dashboard follows who is connected and what they ran
+// without polling.
+
+/** @returns {object[]} open sessions, most recently seen first */
+export const listMcpSessions = () => mcpSessions.list();
+
+/**
+ * @param {{sessionId?: string, tool?: string, limit?: number|string}} [query]
+ * @returns {object[]} tool calls, most recent first
+ */
+export const listMcpCalls = (query = {}) => mcpAudit.list(query);
+
+/**
+ * @param {string} id
+ * @param {() => Promise<void>} close ends that session's transport
+ */
+export function openMcpSession(id, close) {
+  mcpSessions.open(id, close);
+  emitMcpSessions();
+}
+
+export const hasMcpSession = (id) => mcpSessions.has(id);
+
+/** @param {string} id @param {{name: string, version: string}|undefined} client */
+export function identifyMcpSession(id, client) {
+  mcpSessions.identify(id, client);
+  emitMcpSessions();
+}
+
+export const touchMcpSession = (id) => mcpSessions.touch(id);
+
+/** Called from the transport's own close, whatever ended it. */
+export function endMcpSession(id) {
+  if (mcpSessions.remove(id)) emitMcpSessions();
+}
+
+/**
+ * @param {{sessionId: string|null, tool: string, args: unknown, durationMs: number, ok: boolean,
+ *          error: string|null}} call
+ */
+export function recordMcpCall(call) {
+  if (call.sessionId) mcpSessions.touch(call.sessionId, { call: true });
+  const client = call.sessionId ? mcpSessions.clientOf(call.sessionId) : null;
+  const entry = mcpAudit.record({ ...call, client });
+  events.emit('mcp', { kind: 'call', call: entry });
+}
+
+const emitMcpSessions = () => events.emit('mcp', { kind: 'sessions', sessions: mcpSessions.list() });
 
 // --- settings --------------------------------------------------------------------------------
 
@@ -1195,7 +1294,7 @@ manager.events.on('status', () => ports.invalidate());
  */
 export async function shutdown() {
   shuttingDown = true;
-  await mcpListener.stop().catch(() => {});
+  await unbindMcp().catch(() => {});
   await pool.closeAll();
   lifecycle.close();
   // Before the managed processes, and unlike a PostgreSQL server: an open shell is a child of this
@@ -1204,4 +1303,5 @@ export async function shutdown() {
   await manager.stopAll();
   // Awaited: closeAll flushes queued JSONL writes, and server.js calls process.exit() right after.
   await logStore.closeAll();
+  await mcpAudit.close();
 }

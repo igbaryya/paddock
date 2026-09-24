@@ -14,6 +14,8 @@
  *   `applications`  config changed; the UI refetches, the payload carries nothing it needs
  *   `ports`         `{scannedAt, ports, degraded}` — pushed only when the port list actually
  *                   changes, from one server-side scan shared by every client
+ *   `mcp`           `{kind: 'sessions', sessions}` when an agent connects, identifies itself or
+ *                   leaves, and `{kind: 'call', call}` for every tool call an agent makes
  */
 import { events as serviceEvents } from '../service.js';
 import * as service from '../service.js';
@@ -79,6 +81,10 @@ const onApplications = (event) => {
   if (clients.size) broadcast('applications', event ?? {});
 };
 
+const onMcp = (event) => {
+  if (clients.size) broadcast('mcp', event);
+};
+
 /**
  * Port state changes without anything telling us, so it is the one thing here that has to be
  * polled. It is polled ONCE on the server, gated on someone actually watching, rather than by each
@@ -119,6 +125,7 @@ export function start() {
   serviceEvents.on('status', onStatus);
   serviceEvents.on('log', onLog);
   serviceEvents.on('applications', onApplications);
+  serviceEvents.on('mcp', onMcp);
   // 0 turns background scanning off entirely; the ports view then updates only when asked.
   if (PORT_SCAN_INTERVAL_MS > 0) {
     portTimer = setInterval(scanPorts, PORT_SCAN_INTERVAL_MS);
@@ -132,6 +139,7 @@ export function stop() {
   serviceEvents.off('status', onStatus);
   serviceEvents.off('log', onLog);
   serviceEvents.off('applications', onApplications);
+  serviceEvents.off('mcp', onMcp);
 
   clearInterval(portTimer);
   portTimer = null;

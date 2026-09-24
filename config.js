@@ -104,6 +104,26 @@ export const MCP_PORT_OVERRIDE = trimmedEnv('PADDOCK_MCP_PORT')
   ? intFromEnv('PADDOCK_MCP_PORT', 4600, { min: 1024, max: 65_535 })
   : null;
 
+/**
+ * A fresh install with nothing configured brings MCP up on its default port by itself, so an agent
+ * can connect without anyone finishing the setup wizard first. Off leaves MCP down until it is.
+ */
+export const MCP_AUTO_CONFIGURE = boolFromEnv('PADDOCK_MCP_AUTO_CONFIGURE', true);
+
+/**
+ * How long an MCP session may sit unused before it is closed. A client whose session was closed is
+ * answered 404 and opens a new one, so this bounds memory, not what an agent can do.
+ */
+export const MCP_SESSION_IDLE_MS = intFromEnv('PADDOCK_MCP_SESSION_IDLE_MS', 3_600_000, { min: 1_000 });
+
+/** Open MCP sessions kept at once; opening one more closes the one least recently used. */
+export const MCP_MAX_SESSIONS = intFromEnv('PADDOCK_MCP_MAX_SESSIONS', 64);
+
+/** Tool calls kept in memory for the audit view; older ones stay in the JSONL file. */
+export const MCP_AUDIT_BUFFER_CALLS = intFromEnv('PADDOCK_MCP_AUDIT_BUFFER_CALLS', 2_000);
+
+export const MCP_AUDIT_FILE_MAX_BYTES = intFromEnv('PADDOCK_MCP_AUDIT_FILE_MAX_BYTES', 5_242_880);
+
 export const DATA_DIR = resolveDataDir({ env: process.env, platform: process.platform });
 
 /** The configuration document: applications and their processes. */
@@ -113,6 +133,9 @@ export const DB_FILE = path.join(DATA_DIR, 'applications.json');
 export const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
 
 export const LOG_DIR = path.join(DATA_DIR, 'logs');
+
+/** Every MCP tool call, one JSON line each — the audit trail of what agents ran. */
+export const MCP_AUDIT_FILE = path.join(DATA_DIR, 'mcp-calls.jsonl');
 
 /** Favicons found on running services — a cache, rebuilt by the next start, and safe to delete by hand. */
 export const FAVICON_DIR = path.join(DATA_DIR, 'favicons');

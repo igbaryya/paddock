@@ -1,15 +1,20 @@
 /**
  * MCP tool surface over Streamable HTTP — the operations the dashboard offers, handed to an agent.
- * Stateless on purpose: a fresh McpServer and transport per POST, closed with the response,
- * because a reused stateless transport answers with a bare 500 no handler here would ever see.
+ * Stateful: `initialize` opens a session with its own McpServer and transport, and every later
+ * request names it in `Mcp-Session-Id`. That is what lets the dashboard say which agent is
+ * connected and attribute each tool call to it. A request naming a session that is gone — closed
+ * idle, or from before a restart — is answered 404, which tells the client to initialize again.
  * Every tool goes through service.js, so the agent and the UI can never see different shapes, and
  * every lifecycle input is an id — defining processes stays with the human in the dashboard. The
  * database tools are the one place an agent sends free text: SQL, against a PostgreSQL application.
  */
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { z } from 'zod';
-import { HOST, PORT } from '../config.js';
+import { HOST, PORT, ROOT_DIR } from '../config.js';
 import { json as sendJson, databaseErrorFields, errorMessage } from './respond.js';
 import {
   listApplications, getApplication, readLogs,
@@ -18,9 +23,12 @@ import {
   listPorts, getPort, stopPort,
   clusterInfo, listDatabases, listSchemas, listTables, describeTable,
   runReadOnlySql, runSql, createDatabase, dropDatabase,
+  openMcpSession, identifyMcpSession, touchMcpSession, endMcpSession, recordMcpCall,
 } from '../service.js';
 
-const SERVER_INFO = { name: 'paddock', version: '1.0.0' };
+/** The release version, so an agent's client reports the Paddock it is actually talking to. */
+const { version } = JSON.parse(readFileSync(path.join(ROOT_DIR, 'package.json'), 'utf8'));
+const SERVER_INFO = { name: 'paddock', version };
 
 const DEFAULT_MAX_ROWS = 200;
 
@@ -493,52 +501,63 @@ function registerDatabaseAdminTools(server) {
   );
 }
 
+/**
+ * Every tool is registered through this, so every call lands in the audit whatever the tool is.
+ * `guard` never throws, so the outcome is read off the result. A tool with no inputSchema is
+ * handed only `extra`, which is why the arguments are taken as "everything before the last".
+ */
+const auditing = (server) => ({
+  registerTool: (tool, config, handler) =>
+    server.registerTool(tool, config, async (...params) => {
+      const extra = params.at(-1);
+      const started = performance.now();
+      const result = await handler(...params);
+      recordMcpCall({
+        sessionId: extra?.sessionId ?? null,
+        tool,
+        args: params.length > 1 ? params[0] : null,
+        durationMs: Math.round(performance.now() - started),
+        ok: !result.isError,
+        error: result.isError ? result.content[0].text : null,
+      });
+      return result;
+    }),
+});
+
 function createMcpServer() {
   const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
-  registerInspectionTools(server);
-  registerApplicationTools(server);
-  registerProcessTools(server);
-  registerPortTools(server);
-  registerDatabaseInspectionTools(server);
-  registerDatabaseSqlTools(server);
-  registerDatabaseAdminTools(server);
+  const audited = auditing(server);
+  registerInspectionTools(audited);
+  registerApplicationTools(audited);
+  registerProcessTools(audited);
+  registerPortTools(audited);
+  registerDatabaseInspectionTools(audited);
+  registerDatabaseSqlTools(audited);
+  registerDatabaseAdminTools(audited);
   return server;
 }
 
+/** Open sessions by id. What is known about each lives in service.js; the transport lives here. */
+const transports = new Map();
+
 /**
- * Handle one request to `/mcp`. Only POST is spoken here: in stateless mode a GET with
- * `Accept: text/event-stream` opens a standalone SSE stream fed by a keep-alive nothing will ever
- * write to, which leaks the connection (FINDINGS H3).
+ * Handle one request to `/mcp`. A request carrying `Mcp-Session-Id` goes to that session's
+ * transport — a POST, the GET that opens its notification stream, or the DELETE that ends it.
+ * Without one, only a POST can be answered: it has to be `initialize`, which opens a session.
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  */
 export async function handleMcp(req, res) {
-  if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
-    rpcError(res, 405, -32_000, `${req.method} is not supported: this endpoint is stateless and ` +
-      'every MCP message is a POST sent with Accept: application/json, text/event-stream.');
-    return;
-  }
-
-  const { hosts, origins } = allowlistFor(req.socket.localPort || PORT);
-  const server = createMcpServer();
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableDnsRebindingProtection: true,
-    allowedHosts: hosts,
-    allowedOrigins: origins,
-  });
-  // Both belong to this one request; a transport that outlives its response cannot be reused.
-  res.on('close', () => {
-    transport.close().catch(() => {});
-    server.close().catch(() => {});
-  });
-
+  const sessionId = req.headers['mcp-session-id'];
   try {
-    await server.connect(transport);
-    // No parsedBody argument — the transport reads the stream itself, and a body consumed here
-    // would have to be handed back as that third argument or it answers 400 (FINDINGS H2).
-    await transport.handleRequest(req, res);
+    if (typeof sessionId === 'string' && sessionId) return await forward(sessionId, req, res);
+    if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
+      rpcError(res, 405, -32_000, `${req.method} needs an Mcp-Session-Id: open a session first ` +
+        'with an initialize POST sent with Accept: application/json, text/event-stream.');
+      return;
+    }
+    await openSession(req, res);
   } catch (err) {
     console.error('[paddock] MCP request failed:', formatError(err));
     // A client that hung up mid-request lands here too; there is nobody left to answer.
@@ -546,4 +565,51 @@ export async function handleMcp(req, res) {
     if (res.headersSent) return void res.end();
     rpcError(res, 500, -32_603, 'Internal error while handling the MCP request');
   }
+}
+
+async function forward(sessionId, req, res) {
+  const transport = transports.get(sessionId);
+  if (!transport) {
+    rpcError(res, 404, -32_001, 'Session not found — it was closed; send initialize to open a new one');
+    return;
+  }
+  touchMcpSession(sessionId);
+  // No parsedBody argument — the transport reads the stream itself, and a body consumed here
+  // would have to be handed back as that third argument or it answers 400 (FINDINGS H2).
+  await transport.handleRequest(req, res);
+}
+
+/**
+ * A fresh server and transport that become a session only if this request is a valid initialize.
+ * Anything else is answered by the transport with its own error, and the pair is dropped with the
+ * response instead of being kept for a session that never opened.
+ */
+async function openSession(req, res) {
+  const { hosts, origins } = allowlistFor(req.socket.localPort || PORT);
+  const server = createMcpServer();
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: randomUUID,
+    enableDnsRebindingProtection: true,
+    allowedHosts: hosts,
+    allowedOrigins: origins,
+    onsessioninitialized: (id) => {
+      transports.set(id, transport);
+      openMcpSession(id, () => transport.close());
+    },
+  });
+  // Set before connect, which chains it: whatever ends the session — DELETE, the idle reaper, the
+  // listener stopping — ends here, and so does the registry entry.
+  transport.onclose = () => {
+    const id = transport.sessionId;
+    if (id && transports.delete(id)) endMcpSession(id);
+    server.close().catch(() => {});
+  };
+  server.server.oninitialized = () =>
+    identifyMcpSession(transport.sessionId, server.server.getClientVersion());
+  res.on('close', () => {
+    if (!transport.sessionId || !transports.has(transport.sessionId)) transport.close().catch(() => {});
+  });
+
+  await server.connect(transport);
+  await transport.handleRequest(req, res);
 }

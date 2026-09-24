@@ -321,10 +321,12 @@ write SQL, **Run** (or ⌘/Ctrl+Enter, which runs the selection when there is on
 
 ## Driving it from an agent
 
-The MCP endpoint is Streamable HTTP at `/mcp`:
+The MCP endpoint is Streamable HTTP at `/mcp` on its own port, **4600** by default — not the
+dashboard's 4599. A fresh install brings it up by itself; if 4600 is taken it picks a free port and
+keeps it. The MCP page in the dashboard shows the exact URL, and lets you change the port.
 
 ```bash
-claude mcp add --transport http paddock http://127.0.0.1:4599/mcp
+claude mcp add --transport http paddock http://127.0.0.1:4600/mcp
 ```
 
 <details>
@@ -333,7 +335,7 @@ claude mcp add --transport http paddock http://127.0.0.1:4599/mcp
 ```json
 {
   "mcpServers": {
-    "paddock": { "type": "http", "url": "http://127.0.0.1:4599/mcp" }
+    "paddock": { "type": "http", "url": "http://127.0.0.1:4600/mcp" }
   }
 }
 ```
@@ -343,6 +345,12 @@ claude mcp add --transport http paddock http://127.0.0.1:4599/mcp
 The server binds loopback, so an agent on another machine reaches it through an SSH tunnel or a
 private overlay network — not by binding `0.0.0.0`. If a client cannot connect, check it sends
 `Accept: application/json, text/event-stream`; the transport answers 406 without both.
+
+Each agent gets a session when it connects. The dashboard lists the open sessions — which client,
+when it was last seen, how many calls it made — and every tool call with its arguments, duration and
+outcome (`GET /api/mcp/sessions`, `GET /api/mcp/calls`, and `mcp` events on `/api/events`). SQL
+`params` are recorded as their types only. The log lives in `mcp-calls.jsonl` in the data directory.
+A session idle for an hour is closed; the client is answered 404 and opens a new one.
 
 ### Tools
 
@@ -504,6 +512,12 @@ full buffer does not lay out every row on every incoming batch.
 | --- | --- |
 | `PADDOCK_HOST` | `127.0.0.1` |
 | `PADDOCK_PORT` | `4599` |
+| `PADDOCK_MCP_PORT` | unset — the port chosen in the dashboard |
+| `PADDOCK_MCP_AUTO_CONFIGURE` | `true` |
+| `PADDOCK_MCP_SESSION_IDLE_MS` | `3600000` |
+| `PADDOCK_MCP_MAX_SESSIONS` | `64` |
+| `PADDOCK_MCP_AUDIT_BUFFER_CALLS` | `2000` |
+| `PADDOCK_MCP_AUDIT_FILE_MAX_BYTES` | `5242880` |
 | `PADDOCK_DATA_DIR` | OS application data directory |
 | `PADDOCK_LOG_BUFFER_LINES` | `2000` |
 | `PADDOCK_LOG_FILE_MAX_BYTES` | `5242880` |
@@ -534,6 +548,7 @@ privileged capability, and the boundaries are deliberate:
 - Binds loopback, and rejects any request whose `Host` or `Origin` is not a loopback origin, plus any
   connection not from a loopback address. A web page you visit cannot drive your process manager.
 - MCP lifecycle tools take ids and port numbers only — no shell, no paths, no configuration changes.
+  The audit of what agents ran is dashboard-only: no MCP tool can read or clear it.
   The SQL tools take SQL, and through a superuser role that reaches the shell (`COPY … TO PROGRAM`);
   the role an application connects as is the boundary there. The dashboard's SQL console is the same
   capability behind the same loopback and origin guard as the rest of `/api`, and a write from it has
@@ -617,6 +632,9 @@ from a terminal, and discovery. Without them those tests are skipped.
 - [applications.js](applications.js) — configuration domain: CRUD and validation
 - [process-manager.js](process-manager.js) — spawn, stop, restart, runtime state, orphan reaping
 - [log-store.js](log-store.js) — bounded ring buffers and JSONL persistence
+- [jsonl-sink.js](jsonl-sink.js) — the append-only, rotated JSONL file behind the logs and the MCP audit
+- [mcp-listener.js](mcp-listener.js), [mcp-preferences.js](mcp-preferences.js) — the MCP port and its lifecycle
+- [mcp-sessions.js](mcp-sessions.js), [mcp-audit.js](mcp-audit.js) — connected agents and every tool call they made
 - [ports.js](ports.js) — port scan cache, owner correlation, safe termination
 - [workspace.js](workspace.js) — read-only project inspection: directory browsing, scripts, `.env`
 - [favicons.js](favicons.js) — favicon discovery on running services, and its on-disk cache

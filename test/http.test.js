@@ -28,6 +28,8 @@ const SSE_EVENT_TIMEOUT_MS = 20_000;
 let server;
 let port;
 let mcpPort;
+/** The session every MCP test shares, opened once in `before` — as a real client would. */
+let mcpSession = null;
 let dataDir;
 let repoDir;
 let serverStderr = '';
@@ -131,11 +133,14 @@ function raw({ method = 'GET', target, headers = {}, body = '', version = 'HTTP/
 const mcpBaseUrl = () => `http://127.0.0.1:${mcpPort}`;
 
 async function mcp(payload, headers = {}) {
+  // An initialize opens a session of its own; everything else runs in the shared one.
+  const session = payload.method === 'initialize' || !mcpSession ? {} : { 'Mcp-Session-Id': mcpSession };
   const res = await fetch(`${mcpBaseUrl()}/mcp`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Accept: 'application/json, text/event-stream',
+      ...session,
       ...headers,
     },
     body: JSON.stringify(payload),
@@ -143,15 +148,51 @@ async function mcp(payload, headers = {}) {
   });
   const text = await res.text();
   const contentType = res.headers.get('content-type') ?? '';
+  const sessionId = res.headers.get('mcp-session-id');
   if (!contentType.startsWith('text/event-stream')) {
-    return { status: res.status, contentType, message: text ? JSON.parse(text) : null };
+    return { status: res.status, contentType, sessionId, message: text ? JSON.parse(text) : null };
   }
   const data = text
     .split('\n')
     .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice('data:'.length).trim());
   assert.equal(data.length, 1, `expected one SSE data line, got ${data.length}: ${text}`);
-  return { status: res.status, contentType, message: JSON.parse(data[0]) };
+  return { status: res.status, contentType, sessionId, message: JSON.parse(data[0]) };
+}
+
+const initializeRequest = (clientName) => ({
+  jsonrpc: '2.0',
+  id: 1,
+  method: 'initialize',
+  params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: clientName, version: '1' } },
+});
+
+/** initialize, then the `initialized` notification — the handshake every real client performs. */
+async function openMcpSession(clientName) {
+  const res = await mcp(initializeRequest(clientName));
+  assert.equal(res.status, 200, JSON.stringify(res.message));
+  assert.ok(res.sessionId, 'initialize must hand back an Mcp-Session-Id');
+  const notified = await fetch(`${mcpBaseUrl()}/mcp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      'Mcp-Session-Id': res.sessionId,
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  assert.equal(notified.status, 202);
+  return res.sessionId;
+}
+
+/** A port nothing holds right now: bind an ephemeral one and give it straight back. */
+async function freePort() {
+  const probe = net.createServer();
+  await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const { port: free } = probe.address();
+  await new Promise((resolve) => probe.close(resolve));
+  return free;
 }
 
 /** @param {object} result a tools/call result @returns {any} the parsed JSON the tool returned */
@@ -186,6 +227,8 @@ async function startServer() {
       PADDOCK_REAP_ORPHANS: 'false',
       PADDOCK_START_SETTLE_MS: '200',
       PADDOCK_STOP_GRACE_MS: '2000',
+      // The suite installs MCP itself, on a free port — never on the developer's 4600.
+      PADDOCK_MCP_AUTO_CONFIGURE: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -213,12 +256,13 @@ async function startServer() {
 }
 
 async function installMcpForTests() {
-  mcpPort = port + 10_000;
+  mcpPort = await freePort();
   const res = await postJson('/api/mcp/configure', { port: mcpPort });
   assert.equal(res.status, 200, res.text);
   const view = res.json();
   assert.equal(view.running, true);
   assert.equal(view.boundPort, mcpPort);
+  mcpSession = await openMcpSession('http-suite');
 }
 
 before(async () => {
@@ -442,6 +486,8 @@ async function spawnPaddock(ownDataDir) {
       PADDOCK_REAP_ORPHANS: 'false',
       PADDOCK_START_SETTLE_MS: '200',
       PADDOCK_STOP_GRACE_MS: '2000',
+      // The suite installs MCP itself, on a free port — never on the developer's 4600.
+      PADDOCK_MCP_AUTO_CONFIGURE: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -771,14 +817,10 @@ test('path traversal never serves a file from outside the UI directory', async (
 });
 
 test('MCP initialize returns the paddock server info over SSE framing', async () => {
-  const res = await mcp({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } },
-  });
+  const res = await mcp(initializeRequest('test'));
   assert.equal(res.status, 200);
   assert.match(res.contentType, /^text\/event-stream/);
+  assert.match(res.sessionId, /^[0-9a-f-]{36}$/);
   assert.equal(res.message.jsonrpc, '2.0');
   assert.equal(res.message.id, 1);
   assert.deepEqual(res.message.result.serverInfo, { name: 'paddock', version: '1.0.0' });
@@ -904,7 +946,7 @@ test('GET /mcp on the dashboard port explains MCP moved to its own listener', as
   assert.equal(body.error.code, 'mcp_moved');
 });
 
-test('GET /mcp on the MCP port is 405 with Allow: POST and closes instead of hanging', async () => {
+test('GET /mcp on the MCP port without a session is 405 with Allow: POST and closes instead of hanging', async () => {
   const res = await fetch(`${mcpBaseUrl()}/mcp`, { signal: AbortSignal.timeout(5_000) });
   const body = await res.text();
   assert.equal(res.status, 405);
@@ -912,7 +954,7 @@ test('GET /mcp on the MCP port is 405 with Allow: POST and closes instead of han
   const message = JSON.parse(body);
   assert.equal(message.jsonrpc, '2.0');
   assert.equal(message.error.code, -32_000);
-  assert.match(message.error.message, /GET is not supported/);
+  assert.match(message.error.message, /GET needs an Mcp-Session-Id/);
 });
 
 test('a forged Host on /mcp is refused by the local-origin guard', async () => {
@@ -931,6 +973,62 @@ test('a forged Host on /mcp is refused by the local-origin guard', async () => {
   assert.deepEqual(JSON.parse(res.body), {
     error: { message: 'local requests only', code: 'forbidden' },
   });
+});
+
+test('an open MCP session is listed with the client that opened it', async () => {
+  const sessions = (await api('/api/mcp/sessions')).json();
+  const mine = sessions.find((session) => session.id === mcpSession);
+  assert.ok(mine, `session ${mcpSession} missing from ${JSON.stringify(sessions)}`);
+  assert.deepEqual(mine.client, { name: 'http-suite', version: '1' });
+  assert.equal(mine.active, true);
+});
+
+test('every MCP tool call is audited against its session, with SQL params reduced to their types', async () => {
+  const app = await createApplication('mcp-audit');
+  await mcp({
+    jsonrpc: '2.0',
+    id: 30,
+    method: 'tools/call',
+    params: {
+      name: 'query',
+      arguments: { application_id: app.id, database: 'app', sql: 'SELECT $1', params: ['s3cret', 7] },
+    },
+  });
+
+  const calls = (await api(`/api/mcp/calls?sessionId=${mcpSession}&tool=query&limit=1`)).json();
+  assert.equal(calls.length, 1);
+  const [call] = calls;
+  assert.equal(call.sessionId, mcpSession);
+  assert.deepEqual(call.client, { name: 'http-suite', version: '1' });
+  assert.equal(call.ok, false);
+  assert.match(call.error, /not a PostgreSQL application/);
+  assert.equal(call.args.sql, 'SELECT $1');
+  assert.deepEqual(call.args.params, ['string', 'number']);
+  assert.ok(Number.isInteger(call.durationMs));
+
+  const sessions = (await api('/api/mcp/sessions')).json();
+  assert.ok(sessions.find((session) => session.id === mcpSession).calls >= 1);
+});
+
+test('a request naming an unknown MCP session is 404, so the client knows to initialize again', async () => {
+  const res = await mcp(
+    { jsonrpc: '2.0', id: 31, method: 'tools/list', params: {} },
+    { 'Mcp-Session-Id': '00000000-0000-0000-0000-000000000000' }
+  );
+  assert.equal(res.status, 404);
+  assert.equal(res.message.error.code, -32_001);
+});
+
+test('DELETE ends an MCP session and takes it off the list', async () => {
+  const sessionId = await openMcpSession('short-lived');
+  const res = await fetch(`${mcpBaseUrl()}/mcp`, {
+    method: 'DELETE',
+    headers: { 'Mcp-Session-Id': sessionId, 'Mcp-Protocol-Version': '2025-06-18' },
+    signal: AbortSignal.timeout(5_000),
+  });
+  assert.equal(res.status, 200);
+  const sessions = (await api('/api/mcp/sessions')).json();
+  assert.equal(sessions.some((session) => session.id === sessionId), false);
 });
 
 test('SSE delivers a log event for a started process and survives the client disconnecting', async () => {

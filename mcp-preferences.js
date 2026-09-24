@@ -6,6 +6,7 @@
  * when set, the same way `PADDOCK_PORT` wins over everything else for the UI.
  */
 import { DISPLAY_HOST } from './config.js';
+import { ValidationError } from './applications.js';
 import * as db from './json-db.js';
 
 export const DEFAULT_MCP_PORT = 4600;
@@ -32,7 +33,7 @@ export const defaultMcp = () => ({
 export function validatePort(port) {
   const value = Number(port);
   if (!Number.isInteger(value) || value < MIN_PORT || value > MAX_PORT) {
-    throw new TypeError(`MCP port must be an integer from ${MIN_PORT} to ${MAX_PORT}`);
+    throw new ValidationError(`MCP port must be an integer from ${MIN_PORT} to ${MAX_PORT}`);
   }
   return value;
 }
