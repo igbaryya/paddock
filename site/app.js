@@ -6,10 +6,20 @@ const REPO = 'igbaryya/paddock';
 const RELEASES = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
 const RELEASES_PAGE = `https://github.com/${REPO}/releases`;
 
+/**
+ * `note` is what the installer will do that the visitor should not be surprised by. The Windows build
+ * is not code-signed yet, so SmartScreen stops the first run; saying so here is what keeps that from
+ * reading as malware.
+ */
 const KINDS = [
   { id: 'mac-arm64', label: 'macOS', detail: 'Apple silicon' },
   { id: 'mac-x64', label: 'macOS', detail: 'Intel' },
-  { id: 'win', label: 'Windows', detail: 'x64 & ARM64' },
+  {
+    id: 'win',
+    label: 'Windows',
+    detail: 'x64 & ARM64',
+    note: 'Not code-signed yet: if SmartScreen says "Windows protected your PC", choose More info → Run anyway.',
+  },
 ];
 
 function classify(name) {
@@ -106,6 +116,7 @@ function renderLatest(release, preferred) {
         ${cta}
       </div>
       <p class="hint">${escapeHtml(formatDate(release.published_at))} · other platforms below</p>
+      ${asset && kind.note ? `<p class="hint">${escapeHtml(kind.note)}</p>` : ''}
     `),
   );
 }
@@ -123,6 +134,7 @@ function renderPlatforms(release) {
         <h3>${kind.label}</h3>
         <p class="muted">${kind.detail}</p>
         ${asset ? `<p class="meta">${escapeHtml(asset.name)}</p>` : ''}
+        ${kind.note ? `<p class="hint">${escapeHtml(kind.note)}</p>` : ''}
         ${action}
       </article>
     `;
