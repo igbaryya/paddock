@@ -13,7 +13,7 @@
  * Publishing happens only when asked (`--publish always`, as the release workflow does).
  */
 import fs from 'node:fs';
-import rebuildNative from './scripts/rebuild-native.js';
+import fixPackedPty from './scripts/fix-packed-pty.js';
 
 const serverPackage = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
@@ -37,6 +37,19 @@ const azureSignOptions = process.env.AZURE_SIGNING_ENDPOINT
 const SERVER_FILES = ['package.json', 'LICENSE', '*.js', 'http/**', 'platform/**', 'postgres/**', 'ui/dist/**'];
 
 /**
+ * Relative to the checkout's node_modules. node-pty ships a prebuilt N-API binary for every platform,
+ * and loads under Electron as it is; each app carries only its own platform and architecture's. A
+ * `build/` from a local compile is left out: node-pty prefers it over the prebuilds, and it is built
+ * for this machine's architecture only.
+ */
+const SERVER_MODULES = [
+  '**/*',
+  '!node-pty/build/**',
+  '!node-pty/prebuilds/**',
+  'node-pty/prebuilds/${platform}-${arch}/**',
+];
+
+/**
  * macOS asks before a process reads these folders, and asks on behalf of the app: the dev servers
  * Paddock spawns are its children. Repositories live in all of them.
  */
@@ -54,7 +67,7 @@ export default {
   // source. The root package has no devDependencies, so what is installed there is the runtime.
   extraResources: [
     { from: '..', to: 'server', filter: SERVER_FILES },
-    { from: '../node_modules', to: 'server/node_modules' },
+    { from: '../node_modules', to: 'server/node_modules', filter: SERVER_MODULES },
   ],
   icon: 'icon.png',
   // The update feed an installed app reads. Builds upload into a draft release, and the feed only
@@ -97,7 +110,6 @@ export default {
   // Per-user, into a fixed directory: the Run key entry names the executable's path.
   // No spaces in the name: GitHub replaces them on upload, and latest.yml names the uploaded file.
   nsis: { oneClick: true, perMachine: false, artifactName: '${productName}-Setup-${version}.${ext}' },
-  // Rebuild node-pty for Electron's ABI inside the packed server tree only — the checkout's own
-  // node_modules stays on the Node ABI for `npm start`.
-  afterPack: rebuildNative,
+  // node-pty's spawn-helper must be executable in the packed server tree on macOS.
+  afterPack: fixPackedPty,
 };

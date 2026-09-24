@@ -16,7 +16,6 @@
     "dist:win": "electron-builder --config electron-builder.config.js --win"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.0.5",
     "electron": "^44.4.1",
     "electron-builder": "^26.15.3"
   },

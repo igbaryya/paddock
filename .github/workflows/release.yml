@@ -66,13 +66,14 @@ jobs:
           npm ci --prefix ui
           npm ci --prefix desktop
 
+      # Before the tests: the HTTP suite serves the built dashboard.
+      - name: Build the dashboard
+        run: npm run build
+
       # The suite is POSIX-first (README → Platform support), so it gates the release from macOS.
       - name: Test
         if: runner.os == 'macOS'
         run: npm test
-
-      - name: Build the dashboard
-        run: npm run build
 
       # Last before the build, so no install script ever runs with the signing material in its environment.
       - name: macOS signing and notarisation

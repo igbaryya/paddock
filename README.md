@@ -83,8 +83,8 @@ npm run desktop:dist    # build the UI, then the installers into desktop/dist/
 
 `desktop:dist` builds for the OS it runs on: a `.dmg` and a `.zip` for each architecture on macOS, or
 one NSIS installer covering x64 and arm64 on Windows. The server depends on `node-pty`, a native
-module that is rebuilt for Electron's ABI inside the packed app, so each installer is built on its own
-OS: a Mac cannot produce a working Windows installer. The release workflow builds both.
+N-API module whose prebuilt binaries load under Electron unchanged; each app carries only the one for
+its own platform and architecture. Build each installer on its own OS — the release workflow does.
 
 **What the app does, and what it leaves to the server.** The app runs the unmodified `server.js` in
 an Electron utility process and shows its dashboard from `http://127.0.0.1:4599`. MCP is the
