@@ -1,13 +1,12 @@
 /**
  * Dialog shell. Configuration forms are a sheet over a dimmed window; the logger is the same
  * object taking the whole window, because a tail in a 600px sheet is the drawer all over again.
- * Escape closes it, focus moves into it on open and back to whatever opened it on close, so a
- * keyboard user is never dropped at the top of the page.
+ * Escape closes it, Tab stays inside it, and focus moves into it on open and back to whatever opened
+ * it on close, so a keyboard user is never dropped at the top of the page.
  */
 import { useEffect, useId, useRef } from 'react';
+import { FOCUSABLE, keepTabInside } from '../focus.js';
 import IconButton from './IconButton.jsx';
-
-const FOCUSABLE = 'input, textarea, select, button';
 
 /**
  * @param {{title: string, onClose: () => void, children: React.ReactNode,
@@ -28,6 +27,7 @@ export default function Modal({ title, onClose, children, size = 'sheet', persis
     const opener = document.activeElement;
     dialogRef.current.querySelector(FOCUSABLE)?.focus();
     const onKeyDown = (event) => {
+      keepTabInside(event, dialogRef.current);
       if (event.key !== 'Escape' || persistent) return;
       // Stopped here on the way to window, where the canvas's drawer is listening: a form opened
       // from that drawer is the layer on top, so Escape must dismiss this and only this. Without

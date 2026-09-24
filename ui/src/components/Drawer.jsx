@@ -13,7 +13,7 @@
  * It is the caller that owns which card is selected, so closing here only reports it: this panel is
  * mounted and unmounted by the canvas, and never hides itself while staying on the page.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef } from 'react';
 import Icon from './Icon.jsx';
 import IconButton from './IconButton.jsx';
 import Segmented from './Segmented.jsx';
@@ -35,11 +35,23 @@ export default function Drawer({
   children,
 }) {
   const panelRef = useRef(null);
+  const bodyId = useId();
 
-  useEffect(() => {
+  // A layout effect so its cleanup runs while the panel is still in the document: after removal,
+  // focus has already fallen to <body> and there is no telling where it was.
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const opener = document.activeElement;
     // Not autofocus on an inner control: the first thing in here may be a log viewport, and moving
     // the caret into a control the user did not aim at is worse than focusing the panel itself.
-    panelRef.current?.focus({ preventScroll: true });
+    panel?.focus({ preventScroll: true });
+    return () => {
+      // Only a close made from in here hands focus back. A click on the canvas already put focus
+      // where the user wanted it, and pulling it to the old card would undo that.
+      if (panel?.contains(document.activeElement) && opener?.isConnected) {
+        opener.focus({ preventScroll: true });
+      }
+    };
   }, []);
 
   // On window, which is the last stop in the propagation path: a form opened from in here listens on
@@ -71,11 +83,14 @@ export default function Drawer({
             onChange={onTabChange}
             label="Details"
             role="tablist"
+            panelId={bodyId}
           />
         </div>
       )}
 
-      <div className="drawer-body">{children}</div>
+      <div className="drawer-body" id={bodyId} role={tabs?.length > 1 ? 'tabpanel' : undefined}>
+        {children}
+      </div>
     </aside>
   );
 }

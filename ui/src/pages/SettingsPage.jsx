@@ -11,29 +11,15 @@
  * is nothing to push. The applications are the shell's live list instead, because they change from
  * everywhere — created, renamed and deleted on other screens.
  */
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import * as api from '../api.js';
 import CopyButton from '../components/CopyButton.jsx';
 import Icon from '../components/Icon.jsx';
+import SettingsGroup from '../components/SettingsGroup.jsx';
 import Switch from '../components/Switch.jsx';
 import ThemeSwitcher from '../components/ThemeSwitcher.jsx';
 import Toolbar from '../components/Toolbar.jsx';
 import { useTheme } from '../useTheme.js';
-
-/**
- * A titled group of rows, with the small print underneath it where the OS puts a group's footnote.
- * @param {{title: string, note?: React.ReactNode, children: React.ReactNode}} props
- */
-function SettingsGroup({ title, note, children }) {
-  const titleId = useId();
-  return (
-    <section className="settings-section" aria-labelledby={titleId}>
-      <h2 className="group-title" id={titleId}>{title}</h2>
-      <div className="group">{children}</div>
-      {note && <p className="group-note">{note}</p>}
-    </section>
-  );
-}
 
 /** @param {{children: React.ReactNode}} props a row that only says something */
 const TextRow = ({ children }) => (

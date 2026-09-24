@@ -57,12 +57,28 @@ export default function TerminalMenu({
   const loading = support === null && !error;
   const unavailable = support && !support.available;
 
+  // What role="menu" promises a screen reader: the arrow keys walk the items, Home and End jump.
+  const onMenuKeyDown = (event) => {
+    const items = [...menuRef.current.querySelectorAll('[role="menuitem"]')];
+    const current = items.indexOf(document.activeElement);
+    const next = {
+      ArrowDown: (current + 1) % items.length,
+      ArrowUp: (current - 1 + items.length) % items.length,
+      Home: 0,
+      End: items.length - 1,
+    }[event.key];
+    if (next === undefined || !items.length) return;
+    event.preventDefault();
+    items[next].focus();
+  };
+
   return (
     <div
       className="menu terminal-menu"
       role="menu"
       aria-labelledby={labelId}
       ref={menuRef}
+      onKeyDown={onMenuKeyDown}
     >
       <div className="terminal-menu-head" id={labelId}>
         <Icon name="terminal" />
@@ -76,11 +92,11 @@ export default function TerminalMenu({
       {!loading && !unavailable && !error && (
         <div className="terminal-menu-scroll">
           {showSessions && sessions.length > 0 && (
-            <section className="terminal-menu-section" aria-label="Open terminals">
+            <section className="terminal-menu-section" role="group" aria-label="Open terminals">
               <h3>Open</h3>
-              <ul>
+              <ul role="none">
                 {sessions.map((session) => (
-                  <li key={session.id}>
+                  <li key={session.id} role="none">
                     <button
                       type="button"
                       role="menuitem"
@@ -110,11 +126,11 @@ export default function TerminalMenu({
           )}
 
           {targets.length > 0 && (
-            <section className="terminal-menu-section" aria-label="New terminal">
+            <section className="terminal-menu-section" role="group" aria-label="New terminal">
               <h3>New terminal in</h3>
-              <ul>
+              <ul role="none">
                 {targets.map((target) => (
-                  <li key={target.processId}>
+                  <li key={target.processId} role="none">
                     <button
                       type="button"
                       role="menuitem"

@@ -8,14 +8,15 @@
  */
 import { useMemo, useState } from 'react';
 import PortsTable from '../components/PortsTable.jsx';
+import Segmented from '../components/Segmented.jsx';
 import Icon from '../components/Icon.jsx';
 import Stat from '../components/Stat.jsx';
 import Toolbar from '../components/Toolbar.jsx';
 
 const FILTERS = [
-  ['all', 'All'],
-  ['managed', 'Managed'],
-  ['exposed', 'Exposed'],
+  { id: 'all', label: 'All' },
+  { id: 'managed', label: 'Managed' },
+  { id: 'exposed', label: 'Exposed' },
 ];
 
 /**
@@ -102,19 +103,7 @@ export default function PortsPage({ ports, isBusy, onRefresh, onStopPort, onProc
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
-          <div className="segmented" role="group" aria-label="Show">
-            {FILTERS.map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={`segment${only === value ? ' selected' : ''}`}
-                aria-pressed={only === value}
-                onClick={() => setOnly(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <Segmented options={FILTERS} value={only} onChange={setOnly} label="Show" />
           <span className="spacer" />
           <span className="meta">
             {filtered === null

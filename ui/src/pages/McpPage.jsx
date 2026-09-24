@@ -2,24 +2,22 @@
  * MCP installation and runtime: the port agents use, whether the listener is up, and a short audit
  * of what happened to it.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import * as api from '../api.js';
 import CopyButton from '../components/CopyButton.jsx';
 import Icon from '../components/Icon.jsx';
 import IconButton from '../components/IconButton.jsx';
+import SettingsGroup from '../components/SettingsGroup.jsx';
 import StatusDot from '../components/StatusDot.jsx';
 import Toolbar from '../components/Toolbar.jsx';
 
-/** @param {{title: string, note?: string, children: import('react').ReactNode}} props */
-function Section({ title, note, children }) {
-  return (
-    <section className="settings-section">
-      <h2 className="group-title">{title}</h2>
-      <div className="group">{children}</div>
-      {note && <p className="group-note">{note}</p>}
-    </section>
-  );
-}
+/** @param {{message: string}} props */
+const ErrorNotice = ({ message }) => (
+  <p className="notice danger" role="alert">
+    <Icon name="alert" />
+    <span>{message}</span>
+  </p>
+);
 
 const formatWhen = (iso) => {
   const at = new Date(iso);
@@ -33,6 +31,7 @@ export default function McpPage({ busy, onAction }) {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [portDraft, setPortDraft] = useState('');
+  const portId = useId();
 
   const load = () =>
     api.getMcp().then(
@@ -53,15 +52,27 @@ export default function McpPage({ busy, onAction }) {
     await load();
   };
 
-  if (error && !state) {
+  const toolbar = <Toolbar title="MCP" subtitle="Agents connect here." />;
+
+  if (!state) {
     return (
-      <p className="notice danger" role="alert">
-        <Icon name="alert" />
-        <span>{error}</span>
-      </p>
+      <>
+        {toolbar}
+        {error ? (
+          <>
+            <ErrorNotice message={error} />
+            <button type="button" className="btn" onClick={load}>
+              Retry
+            </button>
+          </>
+        ) : (
+          <p className="empty-inline" role="status">
+            Loading…
+          </p>
+        )}
+      </>
     );
   }
-  if (!state) return <p className="empty-inline">Loading…</p>;
 
   const status = !state.configured
     ? 'stopped'
@@ -71,9 +82,11 @@ export default function McpPage({ busy, onAction }) {
 
   return (
     <>
-      <Toolbar title="MCP" subtitle="Agents connect here." />
+      {toolbar}
+      {/* A refresh that failed after an action: what is shown below may be out of date. */}
+      {error && <ErrorNotice message={`Could not refresh: ${error}`} />}
 
-      <Section
+      <SettingsGroup
         title="Status"
         note="The dashboard and MCP use different ports. Changing the MCP port requires a restart of the listener."
       >
@@ -127,7 +140,9 @@ export default function McpPage({ busy, onAction }) {
 
         <div className="group-row">
           <div className="row-text">
-            <span className="row-title">Port</span>
+            <label className="row-title" htmlFor={portId}>
+              Port
+            </label>
             <span className="row-sub">
               {state.portLocked
                 ? `Locked by PADDOCK_MCP_PORT (${state.port})`
@@ -143,6 +158,7 @@ export default function McpPage({ busy, onAction }) {
               }}
             >
               <input
+                id={portId}
                 className="field-input compact"
                 type="number"
                 min={1024}
@@ -174,9 +190,9 @@ export default function McpPage({ busy, onAction }) {
             )}
           </dl>
         )}
-      </Section>
+      </SettingsGroup>
 
-      <Section title="Audit">
+      <SettingsGroup title="Audit">
         {state.audit.length === 0 ? (
           <p className="empty-inline">Nothing recorded yet.</p>
         ) : (
@@ -190,7 +206,7 @@ export default function McpPage({ busy, onAction }) {
             ))}
           </ul>
         )}
-      </Section>
+      </SettingsGroup>
     </>
   );
 }

@@ -5,6 +5,7 @@
  * underneath.
  */
 import { useEffect, useId, useRef, useState } from 'react';
+import { keepTabInside } from '../focus.js';
 import Icon from './Icon.jsx';
 import { parseFlexibleQuery, pickPreferredCommandIndex, resolveCommands } from '../commands.js';
 
@@ -19,6 +20,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
   const titleId = useId();
   const inputRef = useRef(null);
   const listRef = useRef(null);
+  const paletteRef = useRef(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
 
@@ -43,6 +45,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
     if (!open) return;
     const opener = document.activeElement;
     const onKeyDown = (event) => {
+      keepTabInside(event, paletteRef.current);
       if (event.key === 'Escape') {
         event.stopPropagation();
         closeRef.current();
@@ -111,6 +114,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
     >
       <div
         className="command-palette"
+        ref={paletteRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -168,6 +172,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
                     type="button"
                     id={`command-${command.id}`}
                     role="option"
+                    tabIndex={-1}
                     aria-selected={selected}
                     data-active={selected ? 'true' : undefined}
                     className={`command-row${selected ? ' active' : ''}${command.suggested ? ' suggested' : ''}`}
