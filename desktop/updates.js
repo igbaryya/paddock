@@ -3,9 +3,11 @@
  * the background, and installed only when the user asks — installing quits the app, and quitting
  * stops every service its server supervises — or when the app is quit anyway.
  *
- * Only an installed app updates: a checkout has no feed to read. macOS will not install an update
- * into an unsigned app, so an unsigned build finds updates and fails to apply them; that failure is
- * logged rather than shown, because there is nothing the user can do about it from here.
+ * What the updater is doing is kept as one state, which the tray and the dashboard both show.
+ *
+ * Only an installed app updates: a checkout has no feed to read, and its state stays 'unavailable'.
+ * macOS will not install an update into an unsigned app, so an unsigned build finds updates and fails
+ * to apply them; that failure is logged, and shows as an 'error' state.
  */
 import { app } from 'electron';
 import electronUpdater from 'electron-updater';
@@ -16,17 +18,80 @@ const { autoUpdater } = electronUpdater;
 /** A check is a request to GitHub, and releases are rare; an app left running still sees one the same day. */
 const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1_000;
 
-/** @param {(version: string) => void} onReady called once an update is downloaded and can be installed */
-export function watchForUpdates(onReady) {
+/**
+ * @typedef {object} UpdateState
+ * @property {'unavailable'|'idle'|'checking'|'up-to-date'|'downloading'|'ready'|'error'} status
+ * @property {string|null} version the update's version, once one has been found
+ * @property {number|null} progress download percentage, 0–100, while one is under way
+ * @property {string|null} error what went wrong, in the 'error' state
+ * @property {string|null} checkedAt ISO time of the last check that finished, either way
+ */
+
+/** @type {UpdateState} */
+let state = { status: 'unavailable', version: null, progress: null, error: null, checkedAt: null };
+
+/** @type {Set<(state: UpdateState) => void>} */
+const listeners = new Set();
+
+/**
+ * A downloaded update stays ready until it is installed: later checks run again and pass through the
+ * other states, and an offline one would otherwise take away the offer to install what is on disk.
+ * @param {Partial<UpdateState>} change
+ */
+function setState(change) {
+  if (state.status === 'ready' && change.status !== 'ready') return;
+  state = { ...state, ...change };
+  for (const listener of listeners) listener(state);
+}
+
+/** @returns {UpdateState} */
+export const getUpdateState = () => state;
+
+/**
+ * @param {(state: UpdateState) => void} listener called on every change
+ * @returns {() => void} unsubscribes
+ */
+export function onUpdateState(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+export function watchForUpdates() {
   if (!app.isPackaged) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.on('update-downloaded', ({ version }) => onReady(version));
-  autoUpdater.on('error', (err) => console.error(`[paddock] update: ${err.message}`));
-  // A failed check rejects as well as emitting 'error', which has already reported it.
-  const check = () => autoUpdater.checkForUpdates().catch(() => {});
+  followUpdater();
+  setState({ status: 'idle' });
   check();
   setInterval(check, CHECK_INTERVAL_MS);
+}
+
+function followUpdater() {
+  const now = () => new Date().toISOString();
+  autoUpdater.on('checking-for-update', () => setState({ status: 'checking', error: null }));
+  autoUpdater.on('update-not-available', () => setState({ status: 'up-to-date', checkedAt: now() }));
+  autoUpdater.on('update-available', ({ version }) =>
+    setState({ status: 'downloading', version, progress: 0, checkedAt: now() })
+  );
+  autoUpdater.on('download-progress', ({ percent }) => setState({ progress: Math.round(percent) }));
+  autoUpdater.on('update-downloaded', ({ version }) => setState({ status: 'ready', version, progress: 100 }));
+  autoUpdater.on('error', (err) => {
+    console.error(`[paddock] update: ${err.message}`);
+    setState({ status: 'error', error: err.message, progress: null, checkedAt: now() });
+  });
+}
+
+/** A failed check rejects as well as emitting 'error', which has already recorded it. */
+const check = () => autoUpdater.checkForUpdates().catch(() => {});
+
+/**
+ * A check the user asked for. A found update downloads as a background one does.
+ * @returns {Promise<UpdateState>} the state the check left, for an answer to show
+ */
+export async function checkForUpdatesNow() {
+  if (state.status === 'unavailable' || state.status === 'ready') return state;
+  await check();
+  return state;
 }
 
 /**

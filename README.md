@@ -82,13 +82,14 @@ npm run desktop:dist    # build the UI, then the installers into desktop/dist/
 ```
 
 `desktop:dist` builds for the OS it runs on: a `.dmg` and a `.zip` for each architecture on macOS, or
-one NSIS installer covering x64 and arm64 on Windows. The server has no native modules, so a Mac can
-also build the Windows installer, with `npm --prefix desktop run dist:win`. Signing it there needs a
-certificate file rather than a Windows certificate store.
+one NSIS installer covering x64 and arm64 on Windows. The server depends on `node-pty`, a native
+module that is rebuilt for Electron's ABI inside the packed app, so each installer is built on its own
+OS: a Mac cannot produce a working Windows installer. The release workflow builds both.
 
 **What the app does, and what it leaves to the server.** The app runs the unmodified `server.js` in
-an Electron utility process and shows its dashboard from `http://127.0.0.1:4599`. The MCP URL is the
-same, so agents configured for a checkout keep working. The installed app carries its own copy of the
+an Electron utility process and shows its dashboard from `http://127.0.0.1:4599`. MCP is the
+server's own listener, on the port chosen when it was set up, so agents configured for a checkout
+keep working. The installed app carries its own copy of the
 server: the source files, the built UI and the production `node_modules`, stored as plain files
 outside the app's asar archive.
 
@@ -97,7 +98,9 @@ outside the app's asar archive.
   the app uses a Paddock that is already running, the dashboard opens straight away. A login opens to
   the tray and shows neither.
 - **Closing the window stops nothing.** Dev servers keep running and agents keep reaching `/mcp`. The
-  tray reopens the window, copies the MCP URL, and quits.
+  tray reopens the window, copies the MCP URL, shows the version, and quits. The MCP URL is read when
+  it is copied, so it follows a port changed in the dashboard. When MCP is not set up yet, the tray
+  says so and opens the dashboard instead.
 - **Quitting stops what the app started.** The app asks its server to shut down, which is the same
   graceful stop Ctrl-C runs. The app waits for it, and kills the server only after the server's own
   shutdown ceiling has passed.
@@ -119,8 +122,10 @@ outside the app's asar archive.
 - **Updates** come from this repository's GitHub releases. The installed app checks at launch and
   every four hours, and downloads an update in the background. The tray then offers **Install … and
   Restart**, which stops the app's server — and so every service it supervises — before the installer
-  runs. An update that is downloaded but not installed is applied the next time the app quits. A
-  build running from a checkout never checks for updates.
+  runs. An update that is downloaded but not installed is applied the next time the app quits.
+  **Check for Updates…** in the tray checks right away and says what it found. The dashboard sees
+  the same version and update state through `window.paddockDesktop`, which exists only inside the
+  app. A build running from a checkout never checks for updates.
 
 ### Releasing
 
@@ -139,6 +144,14 @@ The tag starts [.github/workflows/release.yml](.github/workflows/release.yml), w
 
 Nothing reaches users until you publish the draft on GitHub. The download site then picks the
 release up from the public API — no extra workflow step.
+
+Publishing is instant and reaches every installed app on its next check; there is no staged rollout.
+Installed apps never downgrade, so a bad release is withdrawn by turning it back into a draft — which
+stops apps that have not yet downloaded it — and fixed by publishing a higher version. Two things
+strand every installed app on its current version if they ever change: the repository the `publish`
+entry in `desktop/electron-builder.config.js` names, and `AZURE_SIGNING_PUBLISHER` once a signed
+Windows release is out. The installer file names are what the download site links to, so renaming
+one breaks it too.
 
 The site itself is `site/`, published by [.github/workflows/pages.yml](.github/workflows/pages.yml)
 to GitHub Pages. Preview locally with any static server on that folder. The first deploy needs

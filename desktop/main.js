@@ -8,13 +8,20 @@
  * to stop its process groups before the app exits.
  */
 import path from 'node:path';
-import { app, dialog } from 'electron';
+import { app, clipboard, dialog } from 'electron';
+import { exposeToDashboard } from './bridge.js';
 import { handleServerRequest, openedAtLogin } from './login-item.js';
 import { SERVER_DIR, importServerModule } from './server-dir.js';
 import { probe, startServer } from './server-process.js';
 import { closeSplash, showSplash } from './splash.js';
 import { createTray } from './tray.js';
-import { installUpdate, watchForUpdates } from './updates.js';
+import {
+  checkForUpdatesNow,
+  getUpdateState,
+  installUpdate,
+  onUpdateState,
+  watchForUpdates,
+} from './updates.js';
 import { closeDashboard, showDashboard } from './window.js';
 
 /**
@@ -131,6 +138,61 @@ async function installUpdateAfterStopping(server) {
   installUpdate();
 }
 
+/**
+ * Read when asked, not at launch: the MCP listener is set up, moved and switched off from the
+ * dashboard while the app runs.
+ * @param {string} serverUrl
+ * @returns {Promise<string|null>} null when MCP is not set up, or the server did not say
+ */
+const currentMcpUrl = (serverUrl) =>
+  fetch(`${serverUrl}/api/mcp`)
+    .then((res) => (res.ok ? res.json() : null))
+    .then((view) => view?.url ?? null)
+    .catch(() => null);
+
+/**
+ * Without a URL there is nothing to copy, and the dashboard is where MCP is set up.
+ * @param {string} serverUrl
+ * @param {() => void} open shows the dashboard
+ */
+async function copyMcpUrl(serverUrl, open) {
+  const url = await currentMcpUrl(serverUrl);
+  if (url) return clipboard.writeText(url);
+  open();
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Paddock',
+    message: 'MCP is not set up.',
+    detail: 'Set it up in the dashboard. Its URL can then be copied from here.',
+  });
+}
+
+/**
+ * @param {import('./updates.js').UpdateState} state what a check left
+ * @returns {{type?: string, message: string, detail: string}}
+ */
+function describeCheck(state) {
+  switch (state.status) {
+    case 'ready':
+      return { message: `Paddock ${state.version} is ready to install.`, detail: 'Install it from the tray.' };
+    case 'downloading':
+      return {
+        message: `Paddock ${state.version} is available.`,
+        detail: 'It is downloading, and the tray offers it once it is ready.',
+      };
+    case 'error':
+      return { type: 'warning', message: 'Could not check for updates.', detail: state.error ?? '' };
+    default:
+      return { message: 'Paddock is up to date.', detail: `You have ${app.getVersion()}.` };
+  }
+}
+
+/** A check the user asked for gets an answer, including "nothing new" and "could not check". */
+async function checkForUpdatesAndSay() {
+  const state = await checkForUpdatesNow();
+  dialog.showMessageBox({ type: 'info', title: 'Paddock', ...describeCheck(state) });
+}
+
 async function main() {
   // Chromium's profile would otherwise land in "Paddock", which on the case-insensitive file systems
   // of macOS and Windows is the server's own data directory. First, because the lock below lives there.
@@ -149,21 +211,22 @@ async function main() {
 
   const server = await resolveServer(config);
   if (!server) return;
-  const mcpUrl = await fetch(`${server.url}/api/mcp`)
-    .then((res) => (res.ok ? res.json() : null))
-    .then((view) => view?.url ?? new URL('/mcp', server.url).href)
-    .catch(() => new URL('/mcp', server.url).href);
   const open = () => showDashboard(server.url);
   app.on('second-instance', open);
   app.on('activate', open);
+  const installUpdateNow = () => installUpdateAfterStopping(server);
   tray = createTray({
-    mcpUrl,
     attachedPid: server.attachedPid,
+    updateState: getUpdateState(),
     onOpen: open,
     onQuit: () => app.quit(),
-    onInstallUpdate: () => installUpdateAfterStopping(server),
+    onCopyMcpUrl: () => copyMcpUrl(server.url, open),
+    onInstallUpdate: installUpdateNow,
+    onCheckForUpdates: checkForUpdatesAndSay,
   });
-  watchForUpdates((version) => tray.offerUpdate(version));
+  onUpdateState((state) => tray.showUpdateState(state));
+  exposeToDashboard({ origin: new URL(server.url).origin, installUpdate: installUpdateNow });
+  watchForUpdates();
   // A splash, if the server start put one up, stays until the dashboard has painted in its place.
   if (!openedAtLogin()) open().then(closeSplash);
 }

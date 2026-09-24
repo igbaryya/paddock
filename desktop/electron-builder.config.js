@@ -49,7 +49,7 @@ export default {
   // One version for the product: the server's.
   extraMetadata: { version: serverPackage.version },
   directories: { output: 'dist', buildResources: 'build' },
-  files: ['package.json', '*.js', '!electron-builder.config.js', 'assets/**'],
+  files: ['package.json', '*.js', 'preload.cjs', '!electron-builder.config.js', 'assets/**'],
   // node_modules is its own entry because electron-builder drops a node_modules at the root of any
   // source. The root package has no devDependencies, so what is installed there is the runtime.
   extraResources: [

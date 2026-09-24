@@ -4,8 +4,13 @@
  * closes it. The server keeps supervising and the app stays in the tray; reopening loads the page
  * afresh rather than keeping a hidden renderer alive for hours.
  */
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { BrowserWindow, nativeTheme, shell } from 'electron';
 import { APP_ICON } from './assets-dir.js';
+
+/** Gives the dashboard `window.paddockDesktop`; what it can ask is answered in bridge.js. */
+const PRELOAD = path.join(path.dirname(fileURLToPath(import.meta.url)), 'preload.cjs');
 
 /** The dashboard's own page colours (--bg in ui/src/styles.css), so a new window does not flash. */
 const BACKGROUND = { dark: '#0a0d13', light: '#f4f6f8' };
@@ -53,7 +58,7 @@ function createDashboard(url) {
     icon: APP_ICON,
     autoHideMenuBar: true,
     backgroundColor: pageBackground(),
-    webPreferences: { sandbox: true, contextIsolation: true },
+    webPreferences: { sandbox: true, contextIsolation: true, preload: PRELOAD },
   });
   keepOtherPagesOut(window, new URL(url).origin);
   window.once('ready-to-show', () => window.show());
