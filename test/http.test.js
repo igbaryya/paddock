@@ -12,7 +12,7 @@
  */
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -1029,6 +1029,51 @@ test('DELETE ends an MCP session and takes it off the list', async () => {
   assert.equal(res.status, 200);
   const sessions = (await api('/api/mcp/sessions')).json();
   assert.equal(sessions.some((session) => session.id === sessionId), false);
+});
+
+/** An application with one process whose directory is `dir`. @returns {Promise<string[]>} [appId, procId] */
+async function processIn(dir, label) {
+  const app = await createApplication(label);
+  const added = await postJson(`/api/applications/${app.id}/processes`, {
+    name: 'web',
+    repositoryPath: dir,
+    command: 'sleep 30',
+  });
+  assert.equal(added.status, 200, added.text);
+  return [app.id, added.json().processes[0].id];
+}
+
+test('the git routes read a process\'s repository: status, one file\'s diff, and the log', async () => {
+  const repo = path.join(dataDir, `git-repo-${++appCounter}`);
+  await fs.mkdir(repo);
+  const run = (...args) => execFileSync('git', args, { cwd: repo, stdio: 'pipe' });
+  run('init', '-q', '-b', 'main');
+  run('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'first');
+  await fs.writeFile(path.join(repo, 'new.txt'), 'hello\n');
+  const [appId, procId] = await processIn(repo, 'git-routes');
+  const base = `/api/applications/${appId}/processes/${procId}/git`;
+
+  const status = (await api(base)).json();
+  assert.equal(status.repo, true);
+  assert.equal(status.branch, 'main');
+  assert.deepEqual(status.untracked, [{ path: 'new.txt' }]);
+
+  const diff = await api(`${base}/diff?path=new.txt&untracked=1`);
+  assert.equal(diff.status, 200, diff.text);
+  assert.match(diff.json().diff, /\+hello/);
+
+  const log = (await api(`${base}/log?limit=5`)).json();
+  assert.deepEqual(log.commits.map((commit) => commit.subject), ['first']);
+
+  const escape = await api(`${base}/diff?path=../../etc/passwd`);
+  assert.equal(escape.status, 400, escape.text);
+});
+
+test('a process whose directory is not a repository reads as repo: false', async () => {
+  const [appId, procId] = await processIn(repoDir, 'git-none');
+  const res = await api(`/api/applications/${appId}/processes/${procId}/git`);
+  assert.equal(res.status, 200, res.text);
+  assert.deepEqual(res.json(), { repo: false });
 });
 
 test('SSE delivers a log event for a started process and survives the client disconnecting', async () => {
