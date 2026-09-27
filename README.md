@@ -141,9 +141,11 @@ The tag starts [.github/workflows/release.yml](.github/workflows/release.yml), w
 3. On macOS runs the test suite, then builds the `.dmg` and `.zip` files for both architectures.
    On Windows it builds the NSIS installer.
 4. Uploads everything, including the `latest*.yml` files installed apps read, to the draft.
+5. Publishes the release once both builds have succeeded. If either fails, the draft stays a draft
+   and nobody sees it.
 
-Nothing reaches users until you publish the draft on GitHub. The download site then picks the
-release up from the public API — no extra workflow step.
+The tag is the release: pushing it is what ships. The download site picks the published release up
+from the public API — no extra workflow step.
 
 Publishing is instant and reaches every installed app on its next check; there is no staged rollout.
 Installed apps never downgrade, so a bad release is withdrawn by turning it back into a draft — which

@@ -70,8 +70,8 @@ export default {
     { from: '../node_modules', to: 'server/node_modules', filter: SERVER_MODULES },
   ],
   icon: 'icon.png',
-  // The update feed an installed app reads. Builds upload into a draft release, and the feed only
-  // sees published ones, so nothing reaches users until the draft is published by hand.
+  // The update feed an installed app reads. Builds upload into a draft release, which the feed does
+  // not see; the release workflow publishes it only once every build has succeeded.
   publish: { provider: 'github', owner: 'igbaryya', repo: 'paddock', releaseType: 'draft' },
   electronFuses: {
     // ELECTRON_RUN_AS_NODE turns a signed app into a node binary that inherits its privacy grants.

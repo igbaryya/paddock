@@ -1,6 +1,7 @@
-# Builds the desktop app for macOS and Windows when a version tag is pushed, and uploads the installers
-# and the update feed to a draft GitHub release. Nothing reaches users until that draft is published by
-# hand: installed apps only read published releases.
+# Builds the desktop app for macOS and Windows when a version tag is pushed, uploads the installers
+# and the update feed to a draft GitHub release, and publishes it once both builds have succeeded.
+# Publishing is what puts it on the download site and in front of every installed app; a build that
+# fails on either OS leaves the draft unpublished, so nobody gets half a release.
 #
 #   npm version patch && git push --follow-tags
 #
@@ -149,3 +150,13 @@ jobs:
         run: npm --prefix desktop run dist -- --publish always
         env:
           GH_TOKEN: ${{ github.token }}
+
+  # Only after every build: `needs` a matrix waits for all of it, and skips this if any leg failed.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
