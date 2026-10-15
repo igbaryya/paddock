@@ -1,8 +1,9 @@
 /**
- * The landing page: every configured application as a card, under a one-line read on the machine.
- * This is the screen someone leaves open, so it answers "is anything broken" from across the desk.
+ * The landing page: every configured application as a row of a table, each opening to its services,
+ * under a one-line read on the machine. This is the screen someone leaves open, so it answers "is
+ * anything broken" from across the desk.
  */
-import ApplicationCard from '../components/ApplicationCard.jsx';
+import ApplicationsTable from '../components/ApplicationsTable.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import Icon from '../components/Icon.jsx';
 import Stat from '../components/Stat.jsx';
@@ -40,7 +41,10 @@ function NotLoaded({ unreachable, onRetry }) {
  * @param {{applications: object[], loaded: boolean, unreachable: boolean,
  *          favicons: Record<string, object>, ports: object, busy: Set<string>,
  *          onRetry: () => void, onCreate: () => void,
- *          onAction: (id: string, action: string) => void}} props
+ *          onAction: (id: string, action: string) => void,
+ *          onProcessAction: (applicationId: string, processId: string, action: string) => void,
+ *          onEdit: (application: object) => void,
+ *          onEditProcess: (application: object, process: object) => void}} props
  */
 export default function OverviewPage({
   applications,
@@ -52,6 +56,9 @@ export default function OverviewPage({
   onRetry,
   onCreate,
   onAction,
+  onProcessAction,
+  onEdit,
+  onEditProcess,
 }) {
   const running = applications.filter((a) => a.status === 'running').length;
   const degraded = applications.filter((a) => a.status === 'partial' || a.status === 'failed').length;
@@ -98,17 +105,15 @@ export default function OverviewPage({
             <Stat icon="ports" value={ports.ports === null ? '—' : managedPorts} label="ports held" />
           </div>
 
-          <div className="card-grid">
-            {applications.map((application) => (
-              <ApplicationCard
-                key={application.id}
-                application={application}
-                favicons={favicons}
-                busy={busy.has(application.id)}
-                onAction={(action) => onAction(application.id, action)}
-              />
-            ))}
-          </div>
+          <ApplicationsTable
+            applications={applications}
+            favicons={favicons}
+            isBusy={(id) => busy.has(id)}
+            onAction={onAction}
+            onProcessAction={onProcessAction}
+            onEdit={onEdit}
+            onEditProcess={onEditProcess}
+          />
         </>
       )}
     </>

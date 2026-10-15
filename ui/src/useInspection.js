@@ -1,6 +1,7 @@
 /**
  * What the manager can tell the process form about the directory a command will run in: the scripts
- * that directory's package.json declares, and the .env files sitting next to it.
+ * that directory's package.json declares, the stacks it is built on and how they usually start, and
+ * the .env files sitting next to it.
  *
  * Debounced, because the directory is a text field and most of the paths typed into one have never
  * existed. Cleared the moment the directory changes rather than left on screen: the previous

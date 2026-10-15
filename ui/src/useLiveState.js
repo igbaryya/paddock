@@ -9,10 +9,12 @@
  * than remove it, and would break a legitimate remount.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EVENTS_URL, listApplications, listPorts, readLogs } from './api.js';
+import { EVENTS_URL, getSystemStats, listApplications, listPorts, readLogs } from './api.js';
 
 /** The manager's buffer is bounded, so the browser's has to be too. */
 const MAX_LOG_LINES = 2_000;
+/** Readings kept for the sparklines: two minutes at the default two-second cadence. */
+export const MAX_SYSTEM_SAMPLES = 60;
 /** The live tail of agent tool calls kept in the browser; older ones are fetched from the audit. */
 const MAX_MCP_CALLS = 500;
 /** Starting an application emits a burst of status events; one refetch for the burst is enough. */
@@ -65,6 +67,17 @@ export function useLiveState(applicationId) {
   // What agents are doing over MCP, as it happens: `sessions` is null until the first change is
   // pushed (the MCP page fetches the current list itself), and `calls` only holds what arrived live.
   const [mcp, setMcp] = useState({ sessions: null, calls: [] });
+  // The machine's load: the latest reading, and the recent ones the sidebar draws as a trace. Kept
+  // only in the browser — a reload starting with an empty trace costs nothing.
+  const [system, setSystem] = useState({ latest: null, history: [] });
+
+  const pushSystemSample = useCallback((sample) => {
+    if (!sample?.sampledAt) return;
+    setSystem((prev) => {
+      if (prev.latest?.sampledAt === sample.sampledAt) return prev;
+      return { latest: sample, history: [...prev.history, sample].slice(-MAX_SYSTEM_SAMPLES) };
+    });
+  }, []);
 
   // The route names the application; this is only the loaded copy of it, which is null both before
   // the first fetch lands and when the id in the URL does not exist.
@@ -112,8 +125,10 @@ export function useLiveState(applicationId) {
     const controller = new AbortController();
     reload(controller.signal);
     refreshPorts({}, controller.signal);
+    // Not an error worth a banner: the meters stay empty and the next stream tick fills them.
+    getSystemStats(controller.signal).then(pushSystemSample, () => {});
     return () => controller.abort();
-  }, [reload, refreshPorts]);
+  }, [reload, refreshPorts, pushSystemSample]);
 
   // Snapshot of the selected application's tail. The stream handler reads `viewedRef` so switching
   // applications never reopens the EventSource.
@@ -202,12 +217,19 @@ export function useLiveState(applicationId) {
       // The per-process `ports` field comes from the same scan, so the list is now behind.
       scheduleReload();
     });
+    source.addEventListener('system', (event) => {
+      try {
+        pushSystemSample(JSON.parse(event.data));
+      } catch {
+        // keep the previous reading
+      }
+    });
 
     return () => {
       clearTimeout(coalesce);
       source.close();
     };
-  }, [reload, appendLogs]);
+  }, [reload, appendLogs, pushSystemSample]);
 
   const clearLogs = useCallback(() => setLogs([]), []);
   const dismissError = useCallback(() => setError(null), []);
@@ -225,5 +247,6 @@ export function useLiveState(applicationId) {
     ports,
     refreshPorts,
     mcp,
+    system,
   };
 }

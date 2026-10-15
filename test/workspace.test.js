@@ -286,6 +286,242 @@ describe('inspect: .env files', () => {
   });
 });
 
+describe('inspect: stacks', () => {
+  /** @type {typeof import('../platform/index.js')} */
+  let platform;
+
+  /** A directory holding exactly `files` (relative path → content), parents created as needed. */
+  const fixture = async (name, files) => {
+    const dir = path.join(tmpRoot, 'stacks', name);
+    for (const [relative, content] of Object.entries(files)) {
+      await fs.mkdir(path.dirname(path.join(dir, relative)), { recursive: true });
+      await write(path.join(dir, relative), content);
+    }
+    await fs.mkdir(dir, { recursive: true });
+    return dir;
+  };
+
+  const stacksOf = async (dir) => (await workspace.inspect(dir)).stacks;
+  const stackOf = async (dir, id) => (await stacksOf(dir)).find((stack) => stack.id === id);
+  const commandsOf = (stack) => stack.suggestions.map((suggestion) => suggestion.command);
+
+  before(async () => {
+    platform = await import(pathToFileURL(path.join(PROJECT_ROOT, 'platform', 'index.js')).href);
+  });
+
+  test('a directory with nothing in it is no stack at all', async () => {
+    assert.deepEqual(await stacksOf(emptyDir), []);
+  });
+
+  test('FastAPI under uv: uvicorn through uv, pointed at the app object it found', async () => {
+    const dir = await fixture('fastapi-uv', {
+      'pyproject.toml': '[project]\nname = "api"\ndependencies = ["fastapi[standard]>=0.110"]\n',
+      'uv.lock': '',
+      'main.py': 'from fastapi import FastAPI\n\napi: FastAPI = FastAPI(title="x")\n',
+    });
+    const python = await stackOf(dir, 'python');
+    assert.deepEqual(python.details, ['uv', 'FastAPI']);
+    assert.deepEqual(python.evidence, ['pyproject.toml', 'uv.lock']);
+    assert.deepEqual(commandsOf(python), ['uv run python -m uvicorn main:api --reload']);
+    assert.deepEqual(python.notes, []);
+  });
+
+  test('a src layout tells uvicorn where to import from', async () => {
+    const dir = await fixture('fastapi-src', {
+      'requirements.txt': 'fastapi\nuvicorn\n',
+      'src/main.py': 'app = FastAPI()\n',
+    });
+    const [first] = commandsOf(await stackOf(dir, 'python'));
+    assert.equal(first, `${platform.pythonCommand} -m uvicorn main:app --reload --app-dir src`);
+  });
+
+  test('a src that is a package is imported as one, from the project', async () => {
+    const dir = await fixture('fastapi-src-package', {
+      'requirements.txt': 'fastapi\n',
+      'src/__init__.py': '',
+      'src/main.py': 'from .utils import x\nfrom fastapi import FastAPI\n\napp = FastAPI()\n',
+    });
+    const [first] = commandsOf(await stackOf(dir, 'python'));
+    assert.equal(first, `${platform.pythonCommand} -m uvicorn src.main:app --reload`);
+  });
+
+  test('an entry file longer than a manifest is still searched for its app object', async () => {
+    const routes = '@app.get("/x")\ndef x():\n    return 1\n'.repeat(12_000);
+    const dir = await fixture('fastapi-long-main', {
+      'requirements.txt': 'fastapi\n',
+      'main.py': `from fastapi import FastAPI\n\napp = FastAPI()\n\n${routes}`,
+    });
+    const [first] = commandsOf(await stackOf(dir, 'python'));
+    assert.equal(first, `${platform.pythonCommand} -m uvicorn main:app --reload`);
+  });
+
+  test('the port the Dockerfile serves the app on is the port it runs on here', async () => {
+    const dir = await fixture('fastapi-dockerfile-port', {
+      'requirements.txt': 'fastapi\n',
+      'main.py': 'app = FastAPI()\n',
+      Dockerfile: 'FROM python:3.12\nEXPOSE 8001\nCMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]\n',
+    });
+    const [first] = commandsOf(await stackOf(dir, 'python'));
+    assert.equal(first, `${platform.pythonCommand} -m uvicorn main:app --reload --port 8001`);
+  });
+
+  test("Django runs manage.py with the project's own virtual environment", async () => {
+    const venvPython = platform.venvPython('.venv');
+    const dir = await fixture('django-venv', {
+      'manage.py': '#!/usr/bin/env python\n',
+      'requirements.txt': 'Django==5.0\n',
+      [venvPython]: '',
+    });
+    const python = await stackOf(dir, 'python');
+    assert.deepEqual(python.details, ['.venv', 'Django']);
+    assert.equal(commandsOf(python)[0], `${venvPython} manage.py runserver`);
+  });
+
+  test('Flask with no environment uses the PATH interpreter, and says so', async () => {
+    const dir = await fixture('flask-bare', {
+      'requirements.txt': 'flask>=3\n',
+      'app.py': 'from flask import Flask\napp = Flask(__name__)\n',
+      'run.py': 'print(1)\n',
+    });
+    const python = await stackOf(dir, 'python');
+    assert.deepEqual(commandsOf(python), [
+      `${platform.pythonCommand} -m flask --app app.py run --debug`,
+      `${platform.pythonCommand} run.py`,
+    ]);
+    assert.equal(python.notes.length, 1);
+    assert.match(python.notes[0], /No virtual environment/);
+  });
+
+  test('a dependency named like another is not mistaken for it', async () => {
+    const dir = await fixture('python-lookalike', { 'requirements.txt': 'django-environ\nmy-flask-thing\n' });
+    assert.deepEqual((await stackOf(dir, 'python')).details, []);
+  });
+
+  test('pyproject console scripts are offered through the project tool', async () => {
+    const dir = await fixture('poetry-scripts', {
+      'pyproject.toml': '[tool.poetry]\nname = "x"\n\n[tool.poetry.scripts]\nserve = "x.cli:main"\n',
+    });
+    assert.deepEqual(commandsOf(await stackOf(dir, 'python')), ['poetry run serve']);
+  });
+
+  test('a Vite + React package with no scripts is started through its package manager', async () => {
+    const dir = await fixture('vite-react', {
+      'package.json': JSON.stringify({ devDependencies: { vite: '^5', react: '^18', typescript: '^5' } }),
+      'pnpm-lock.yaml': '',
+    });
+    const node = await stackOf(dir, 'node');
+    assert.deepEqual(node.details, ['TypeScript', 'React (Vite)']);
+    assert.deepEqual(commandsOf(node), ['pnpm exec vite']);
+    assert.match(node.notes[0], /pnpm install/);
+  });
+
+  test('a framework outranks the libraries it is built on', async () => {
+    const dir = await fixture('next', {
+      'package.json': JSON.stringify({ dependencies: { next: '14', react: '18', 'react-dom': '18' } }),
+      node_modules: '',
+    });
+    const node = await stackOf(dir, 'node');
+    assert.deepEqual(node.details, ['JavaScript', 'Next.js']);
+    assert.deepEqual(commandsOf(node), ['npx next dev']);
+    assert.deepEqual(node.notes, [], 'node_modules is there, so nothing to install');
+  });
+
+  test('a package that declares a dev script is reported but not second-guessed', async () => {
+    const node = await stackOf(repo, 'node');
+    assert.ok(node);
+    assert.deepEqual(node.suggestions, []);
+  });
+
+  test("an Express server starts from package.json's main", async () => {
+    const dir = await fixture('express', {
+      'package.json': JSON.stringify({ main: './src/server.js', dependencies: { express: '4' } }),
+      'src/server.js': '',
+      'index.js': '',
+    });
+    const node = await stackOf(dir, 'node');
+    assert.deepEqual(node.details, ['JavaScript', 'Express']);
+    assert.deepEqual(commandsOf(node), ['node --watch src/server.js', 'node src/server.js']);
+  });
+
+  test('no package.json at all: a TypeScript entry file still gets a command', async () => {
+    const dir = await fixture('bare-ts', { 'server.ts': 'console.log(1)' });
+    const node = await stackOf(dir, 'node');
+    assert.deepEqual(node.details, ['TypeScript']);
+    assert.deepEqual(node.evidence, ['server.ts']);
+    assert.deepEqual(commandsOf(node), ['npx tsx watch server.ts']);
+  });
+
+  test('deno.jsonc tasks, comments and all, with the ones that start something first', async () => {
+    const dir = await fixture('deno', {
+      'deno.jsonc': '{\n  // tasks\n  "imports": { "std/": "https://deno.land/std/" },\n  "tasks": { "test": "deno test", "dev": "deno run -A main.ts", },\n}\n',
+      'main.ts': '',
+    });
+    assert.deepEqual(await stackOf(dir, 'node'), undefined, 'a Deno project is not a Node project');
+    assert.deepEqual(commandsOf(await stackOf(dir, 'deno')), ['deno task dev', 'deno task test']);
+  });
+
+  test('Go: every main package under cmd/ is a command', async () => {
+    const dir = await fixture('go', {
+      'go.mod': 'module example.com/x\n\nrequire github.com/gin-gonic/gin v1.9.1\n',
+      'cmd/api/main.go': 'package main',
+      'cmd/worker/main.go': 'package main',
+      'cmd/shared/util.go': 'package shared',
+    });
+    const go = await stackOf(dir, 'go');
+    assert.deepEqual(go.details, ['Gin']);
+    assert.deepEqual(commandsOf(go).sort(), ['go run ./cmd/api', 'go run ./cmd/worker']);
+  });
+
+  test('a virtual Cargo workspace is Rust with nothing for cargo run to run', async () => {
+    const dir = await fixture('cargo-workspace', { 'Cargo.toml': '[workspace]\nmembers = ["a"]\n' });
+    assert.deepEqual((await stackOf(dir, 'rust')).suggestions, []);
+  });
+
+  test('Spring Boot on Gradle goes through the wrapper when there is one', async () => {
+    const dir = await fixture('spring', {
+      'build.gradle.kts': 'plugins { id("org.springframework.boot") version "3.2.0"; kotlin("jvm") }',
+      gradlew: '',
+    });
+    const jvm = await stackOf(dir, 'jvm');
+    assert.equal(jvm.label, 'Kotlin');
+    assert.deepEqual(jvm.details, ['Gradle', 'Spring Boot']);
+    assert.deepEqual(commandsOf(jvm), [`${platform.localCommand('gradlew')} bootRun`]);
+  });
+
+  test('declared runners come first, and only their targets that start something', async () => {
+    const dir = await fixture('declared', {
+      Procfile: '# processes\nweb: bundle exec puma -C config/puma.rb\nworker: bundle exec sidekiq\n',
+      Makefile: '.PHONY: dev build\nPORT := 3000\ndev:\n\tgo run .\nbuild:\n\tgo build\n',
+      'compose.yaml': 'services: {}\n',
+      'go.mod': 'module x\n',
+      'main.go': 'package main',
+    });
+    const stacks = await stacksOf(dir);
+    assert.deepEqual(stacks.map((stack) => stack.id), ['procfile', 'make', 'go', 'compose']);
+    assert.deepEqual(commandsOf(stacks[0]), ['bundle exec puma -C config/puma.rb', 'bundle exec sidekiq']);
+    assert.deepEqual(commandsOf(stacks[1]), ['make dev']);
+    assert.deepEqual(commandsOf(stacks[3]), ['docker compose up']);
+  });
+
+  test('an index.html with nothing else is a static site; inside a Node project it is not', async () => {
+    const site = await fixture('static', { 'index.html': '<!doctype html>' });
+    assert.deepEqual((await stacksOf(site)).map((stack) => stack.id), ['static']);
+
+    const app = await fixture('static-in-node', {
+      'index.html': '<!doctype html>',
+      'package.json': JSON.stringify({ devDependencies: { vite: '5' } }),
+    });
+    assert.deepEqual((await stacksOf(app)).map((stack) => stack.id), ['node']);
+  });
+
+  test('a manifest too large to read costs that stack its details, not the inspection', async () => {
+    const dir = await fixture('huge-gemfile', { Gemfile: `gem "rails"\n${'#'.repeat(300_000)}` });
+    const ruby = await stackOf(dir, 'ruby');
+    assert.deepEqual(ruby.details, []);
+    assert.deepEqual(ruby.suggestions, []);
+  });
+});
+
 describe('inspect: the path itself', () => {
   test('is rejected exactly as the save that follows it would reject it', async () => {
     await rejectsWith(workspace.inspect(''), 'non-empty string');

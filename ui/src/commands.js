@@ -43,6 +43,7 @@ export function buildCommands({
     icon: 'grid',
     keywords: 'home overview dashboard',
     group: 'Pages',
+    shortcut: 'goOverview',
     run: () => navigate(paths.overview()),
   });
 
@@ -53,12 +54,34 @@ export function buildCommands({
     icon: 'ports',
     keywords: 'ports tcp network',
     group: 'Pages',
+    shortcut: 'goPorts',
     run: () => navigate(paths.ports()),
   });
 
   commands.push({
+    id: 'nav-settings',
+    title: 'Settings',
+    subtitle: 'Theme and updates.',
+    icon: 'settings',
+    keywords: 'preferences config general appearance theme updates',
+    group: 'Pages',
+    shortcut: 'goSettings',
+    run: () => navigate(paths.settings()),
+  });
+
+  commands.push({
+    id: 'nav-settings-startup',
+    title: 'Settings › Startup',
+    subtitle: 'Start at login, and which applications start with Paddock.',
+    icon: 'power',
+    keywords: 'login autostart boot',
+    group: 'Pages',
+    run: () => navigate(paths.settings('startup')),
+  });
+
+  commands.push({
     id: 'nav-mcp',
-    title: 'MCP',
+    title: 'Settings › MCP',
     subtitle: 'The agent endpoint: its URL, port and status.',
     icon: 'braces',
     keywords: 'agent ai claude cursor endpoint url',
@@ -67,13 +90,24 @@ export function buildCommands({
   });
 
   commands.push({
-    id: 'nav-settings',
-    title: 'Settings',
-    subtitle: 'Theme, start at login, and install paths.',
-    icon: 'settings',
-    keywords: 'preferences config',
+    id: 'nav-settings-shortcuts',
+    title: 'Settings › Shortcuts',
+    subtitle: 'The keyboard shortcuts, and the keys each one is on.',
+    icon: 'keyboard',
+    keywords: 'keyboard keys hotkeys keybindings bindings',
     group: 'Pages',
-    run: () => navigate(paths.settings()),
+    shortcut: 'showShortcuts',
+    run: () => navigate(paths.settings('shortcuts')),
+  });
+
+  commands.push({
+    id: 'nav-settings-about',
+    title: 'Settings › About',
+    subtitle: 'Install and data paths of this copy.',
+    icon: 'info',
+    keywords: 'paths data directory version',
+    group: 'Pages',
+    run: () => navigate(paths.settings('about')),
   });
 
   for (const app of applications) {
@@ -136,6 +170,7 @@ export function buildCommands({
     icon: 'plus',
     keywords: 'create add',
     group: 'Actions',
+    shortcut: 'newApplication',
     run: () => openApplicationForm(),
   });
 
@@ -147,6 +182,7 @@ export function buildCommands({
       icon: 'pencil',
       keywords: 'edit configuration',
       group: 'Actions',
+      shortcut: 'editApplication',
       run: () => openApplicationForm(selected),
     });
   }

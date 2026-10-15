@@ -1,17 +1,15 @@
 /**
  * Global search: pages, applications, processes, and safe actions in one place.
  *
- * Opens with ⌘/Ctrl+K. Arrow keys move, Enter runs, Escape closes without touching whatever is
+ * Opens with ⌘/Ctrl+K unless rebound in Settings. Arrow keys move, Enter runs, Escape closes without touching whatever is
  * underneath.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 import { keepTabInside } from '../focus.js';
 import Icon from './Icon.jsx';
 import { parseFlexibleQuery, pickPreferredCommandIndex, resolveCommands } from '../commands.js';
-
-const MOD_LABEL = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-  ? '⌘'
-  : 'Ctrl';
+import { formatCombo } from '../shortcuts.js';
+import { IS_MAC, useShortcuts } from '../useShortcuts.js';
 
 /**
  * @param {{open: boolean, commands: object[], actionContext: object|null, onClose: () => void}} props
@@ -26,6 +24,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
 
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const { bindings } = useShortcuts();
 
   const filtered = resolveCommands(commands, query, actionContext);
   const actionMode = parseFlexibleQuery(query).mode !== 'search';
@@ -159,6 +158,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
           ) : (
             filtered.map((command, index) => {
               const selected = index === clampedActive;
+              const keys = command.shortcut && formatCombo(bindings[command.shortcut], IS_MAC);
               const showGroup =
                 command.group && (index === 0 || filtered[index - 1].group !== command.group);
               return (
@@ -186,6 +186,7 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
                       <span className="command-row-title">{command.title}</span>
                       <span className="command-row-subtitle">{command.subtitle}</span>
                     </span>
+                    {keys && <kbd className="command-kbd command-row-kbd">{keys}</kbd>}
                     {selected && <Icon name="chevron" size={14} className="command-row-chevron" />}
                   </button>
                 </li>
@@ -210,10 +211,12 @@ export default function CommandPalette({ open, commands, actionContext, onClose 
               to complete
             </span>
           )}
-          <span className="command-foot-hint command-foot-toggle">
-            <kbd className="command-kbd">{MOD_LABEL} K</kbd>
-            to toggle
-          </span>
+          {bindings.palette && (
+            <span className="command-foot-hint command-foot-toggle">
+              <kbd className="command-kbd">{formatCombo(bindings.palette, IS_MAC)}</kbd>
+              to toggle
+            </span>
+          )}
         </footer>
       </div>
     </div>

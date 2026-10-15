@@ -31,6 +31,9 @@
   --toolbar: rgb(8 8 11 / 0.78);
   --scrim: rgb(0 0 0 / 0.55);
   --icon-tile: #212129;
+  --icon-edge: var(--rim);
+  --icon-shadow: var(--shadow-1);
+  --icon-ink: var(--text);
 
   /* Edges do the work shadows used to: a card is separated from the ground by its border. */
   --separator: rgb(255 255 255 / 0.07);
@@ -132,7 +135,12 @@
   --terminal: #f5f5f8;
   --toolbar: rgb(246 246 248 / 0.82);
   --scrim: rgb(18 18 24 / 0.3);
-  --icon-tile: #f1f1f5;
+  --icon-tile: #f1f3f5;
+  /* A light glyph is redrawn in this ink. The edge and the shadow keep the tile from dissolving
+     into a white card; #667085 on #f1f3f5 clears 3:1. */
+  --icon-edge: #d0d5dd;
+  --icon-ink: #667085;
+  --icon-shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 2px rgb(16 24 40 / 0.1);
 
   --separator: rgb(18 18 24 / 0.08);
   --border: rgb(18 18 24 / 0.12);
@@ -299,16 +307,27 @@ textarea {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   height: 100%;
+  transition: grid-template-columns 0.2s ease;
+}
+
+/* Settings: the page alone, its back button where the rail was. */
+.app.no-sidebar {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* The main column scrolls; the sidebar stays put, so switching applications never loses it. The
    toolbar is the first thing in it and sticks to its top edge, so there is no top padding. */
 .main {
   overflow-y: auto;
+  scrollbar-width: none;
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
   padding: 0 var(--gutter) var(--space-6);
+}
+
+.main::-webkit-scrollbar {
+  display: none;
 }
 
 /* Blocks keep their natural height and `.main` scrolls — otherwise flex shrinks them and a panel
@@ -319,24 +338,54 @@ textarea {
 
 /* --- sidebar --------------------------------------------------------------------------------- */
 
-/* A flat rail flush to the window, separated from the page by one hairline rather than by a shadow
-   — the console layout, where the chrome is a frame around the work and never floats over it.
-   Sections are separated by space, never by rules. */
+/* A floating panel inset from the window edges: rounded, edged and lifted, so the page reads as the
+   ground and the rail as something placed on it. The inset is part of the grid column, so the page
+   never slides under it. Sections are separated by space, never by rules. */
 .sidebar {
+  --sidebar-inset: 8px;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  margin: var(--sidebar-inset);
+  margin-right: 0;
   padding: 10px;
   background: var(--glass);
-  border-right: 1px solid var(--separator);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-float);
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
-.sidebar-head {
+/* The first row: the collapse control on the right, and in the macOS window the traffic lights on
+   the left. */
+.sidebar-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 28px;
+  margin: -4px -4px calc(var(--space-2) - var(--space-4));
+}
+
+.sidebar-toggle {
+  flex: none;
+}
+
+/* The last row of the rail: who this is, and whether it is connected. A hairline sets it apart from
+   the controls above it. */
+.sidebar-brand {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-1) 0 6px;
+  margin-top: var(--space-1);
+  padding: var(--space-3) var(--space-1) var(--space-1) 6px;
+  border-top: 1px solid var(--separator);
+}
+
+/* Only shown in the collapsed rail, where an application's name does not fit. */
+.app-initial {
+  display: none;
 }
 
 .brand {
@@ -575,6 +624,97 @@ textarea {
   margin-bottom: var(--space-1);
 }
 
+/* The machine's load. Rows share the sidebar's 16px glyph column; the colour is green until a
+   figure is worth noticing, and the label and trace stay quiet so the number carries it. */
+.system-meters {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: var(--space-2);
+  transition: opacity 0.2s ease;
+}
+
+.system-meters .sidebar-label {
+  margin-bottom: 2px;
+}
+
+.system-meters.stale {
+  opacity: 0.45;
+}
+
+.meter {
+  --meter-color: var(--ok);
+  display: grid;
+  grid-template-columns: 16px 46px minmax(0, 1fr) 32px;
+  gap: 6px;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+
+.meter-warn { --meter-color: var(--warn); }
+.meter-danger { --meter-color: var(--danger); }
+.meter-unknown { --meter-color: var(--text-faint); }
+
+.meter .icon {
+  color: var(--accent);
+}
+
+.meter-label {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.meter-graph {
+  display: flex;
+  align-items: center;
+  height: 16px;
+  min-width: 0;
+}
+
+.meter-value {
+  text-align: right;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-warn .meter-value,
+.meter-danger .meter-value {
+  color: var(--meter-color);
+}
+
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sparkline-line {
+  fill: none;
+  stroke: var(--meter-color);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.level-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fill-track);
+  overflow: hidden;
+}
+
+.level-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--meter-color);
+  transition: width 0.4s ease;
+}
+
 /* --- toolbar --------------------------------------------------------------------------------- */
 
 /* The page's top bar. It spans the column edge to edge, sticks while the page scrolls under it, and
@@ -628,6 +768,299 @@ textarea {
   align-items: center;
   gap: var(--space-2);
   overflow: visible;
+}
+
+/* The desktop window on macOS has no title bar. The traffic lights sit in the sidebar's top row,
+   and that row — plus the page toolbar — is what moves the window. */
+/* Centred on the traffic lights, which desktop/window.js places at (22, 22): 14px inside the
+   panel's corner, and about 52px wide. */
+html.desktop-mac .sidebar-top {
+  margin-top: -5px;
+  padding-left: 64px;
+  -webkit-app-region: drag;
+}
+
+html.desktop-mac .sidebar-top .sidebar-toggle {
+  -webkit-app-region: no-drag;
+}
+
+/* --- collapsed sidebar ----------------------------------------------------------------------- */
+
+/* An icon rail. Wide enough for the macOS traffic lights; every label is hidden, and its name is
+   the row's tooltip instead. Only in the two-column layout — stacked, the rail is a full row. */
+@media (min-width: 861px) {
+  /* 80px of panel plus the 8px inset: the traffic lights get 14px on either side. */
+  html[data-sidebar='collapsed'] {
+    --sidebar-width: 88px;
+  }
+
+  html[data-sidebar='collapsed'] .sidebar :is(
+    .nav-label,
+    .nav-count,
+    .sidebar-label,
+    .sidebar-search-label,
+    .command-kbd,
+    .theme-switcher,
+    .brand-name,
+    .app-name,
+    .app-count,
+    .conn-label,
+    .meter-label,
+    .meter-graph
+  ) {
+    display: none;
+  }
+
+  /* Each meter becomes its glyph over its figure; the tooltip still has the detail. */
+  html[data-sidebar='collapsed'] .meter {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    height: auto;
+    padding: 4px 0;
+  }
+
+  html[data-sidebar='collapsed'] .meter-value {
+    font-size: 10.5px;
+    text-align: center;
+  }
+
+  html[data-sidebar='collapsed'] .sidebar-top {
+    justify-content: center;
+    margin-bottom: calc(var(--space-3) - var(--space-4));
+  }
+
+  /* One square for every control on the rail, centred, so the column reads as a single stack. */
+  html[data-sidebar='collapsed'] .sidebar :is(
+    .sidebar-toggle,
+    .sidebar-search,
+    .nav-item,
+    .sidebar-add,
+    .sidebar-update
+  ) {
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    margin-inline: auto;
+  }
+
+  /* The traffic lights fill the row on their own, so the toggle moves beneath them. */
+  html.desktop-mac[data-sidebar='collapsed'] .sidebar-top {
+    padding-left: 0;
+    padding-top: 34px;
+  }
+
+  html[data-sidebar='collapsed'] .sidebar :is(.nav-item, .sidebar-search) {
+    justify-content: center;
+    padding: 0;
+  }
+
+  html[data-sidebar='collapsed'] .app-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 36px;
+    margin-inline: auto;
+    padding: 0;
+  }
+
+  html[data-sidebar='collapsed'] .app-initial {
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-sm);
+    background: var(--icon-tile);
+    border: 1px solid var(--separator);
+    font-size: 12px;
+    font-weight: 650;
+    color: var(--text);
+  }
+
+  /* The status rides on the tile's corner, the way an app icon carries a badge. */
+  html[data-sidebar='collapsed'] .app-row .status {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--glass);
+  }
+
+  html[data-sidebar='collapsed'] .app-row .status-glyph {
+    font-size: 8px;
+  }
+
+  html[data-sidebar='collapsed'] .sidebar-brand {
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-3) 0 var(--space-1);
+  }
+
+  /* Just the dot: the colour and the pulse still say whether the stream is live. */
+  html[data-sidebar='collapsed'] .conn {
+    margin-left: 0;
+    padding: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app {
+    transition: none;
+  }
+}
+
+html.desktop-mac .toolbar {
+  -webkit-app-region: drag;
+}
+
+html.desktop-mac .toolbar :is(a, button, input, select, textarea, label, .menu) {
+  -webkit-app-region: no-drag;
+}
+
+/* With no rail to hold them, the traffic lights sit at the toolbar's left end: about 80px of it,
+   then the gap the OS leaves between them and a window's first toolbar control. */
+html.desktop-mac .app.no-sidebar .toolbar {
+  padding-left: 104px;
+}
+
+/* The same two controls at the far right of every page, set off from the page's own by a hairline. */
+.toolbar-corner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--separator);
+}
+
+.toolbar-actions + .toolbar-corner {
+  margin-left: 0;
+}
+
+.notifications-button {
+  position: relative;
+}
+
+.notifications-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.notifications-menu {
+  width: 360px;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.notifications-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-2) 10px var(--space-3);
+  border-bottom: 1px solid var(--separator);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.notifications-head .icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.notifications-head .btn {
+  margin-left: auto;
+}
+
+.notifications-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-3);
+  color: var(--text-faint);
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.notifications-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1);
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+}
+
+.notifications-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: start;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.notifications-row:hover {
+  background: var(--fill-hover);
+}
+
+.notifications-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+
+.notifications-icon.is-update {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.notifications-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.notifications-title {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.notifications-detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.notifications-time {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .counts {
@@ -906,7 +1339,7 @@ textarea {
   opacity: 0.55;
 }
 
-.app-choice:disabled .app-icon > img {
+.app-choice:disabled .app-icon > :is(img, .glyph) {
   filter: grayscale(0.6);
 }
 
@@ -1300,7 +1733,7 @@ textarea {
   height: 42px;
   border-radius: 11px;
   background: var(--icon-tile);
-  box-shadow: inset 0 0 0 1px var(--rim), var(--shadow-1);
+  box-shadow: inset 0 0 0 1px var(--icon-edge), var(--icon-shadow);
   color: var(--text-dim);
   font-size: 18px;
   font-weight: 650;
@@ -1332,10 +1765,19 @@ textarea {
   border-radius: 5px;
 }
 
-.app-icon > img {
+.app-icon > :is(img, .glyph) {
   width: 58%;
   height: 58%;
   object-fit: contain;
+}
+
+/* A near-white favicon, redrawn in --icon-ink. The picture's alpha is the mask, so a white
+   helmet becomes a grey helmet and a transparent eye stays a hole. */
+.glyph {
+  display: block;
+  background-color: var(--icon-ink);
+  -webkit-mask: var(--glyph) center / contain no-repeat;
+  mask: var(--glyph) center / contain no-repeat;
 }
 
 .app-icon-badge {
@@ -1349,10 +1791,10 @@ textarea {
   padding: 3px;
   border-radius: 7px;
   background: var(--surface);
-  box-shadow: 0 0 0 1px var(--rim), var(--shadow-1);
+  box-shadow: 0 0 0 1px var(--icon-edge), var(--shadow-1);
 }
 
-.app-icon-badge img {
+.app-icon-badge :is(img, .glyph) {
   width: 100%;
   height: 100%;
   object-fit: contain;
@@ -1512,9 +1954,11 @@ p.card-processes {
   background-image: radial-gradient(circle at 1px 1px, var(--canvas-dot) 1px, transparent 0);
   cursor: grab;
   /* The surface handles its own panning and zooming, so the browser must not also scroll or
-     bounce — on a trackpad both at once is what makes a canvas feel broken. */
+     bounce — on a trackpad both at once is what makes a canvas feel broken. A drag is a move,
+     so the browser must not also paint a selection across the text the pointer travels over. */
   touch-action: none;
   overscroll-behavior: contain;
+  user-select: none;
 }
 
 .canvas-viewport.panning {
@@ -1554,6 +1998,20 @@ p.card-processes {
 /* The curves into the open card, so what it hangs off is obvious while its drawer is up. */
 .canvas-edge.live {
   stroke: var(--accent);
+}
+
+.canvas-arrow path {
+  fill: var(--edge);
+}
+
+.canvas-arrow.live path {
+  fill: var(--accent);
+}
+
+/* A card outside the application: dashed, like everything on the canvas that is not this
+   application's to run. */
+.node.node-service {
+  border-style: dashed;
 }
 
 .canvas-slot {
@@ -1674,7 +2132,8 @@ p.card-processes {
 }
 
 /* A process's own favicon where it has one, and the glyph for what it is where it has not. The
-   neutral tile behind it is what keeps a dark favicon legible on the dark theme. */
+   neutral tile behind it keeps a dark favicon legible on the dark theme; on the light theme the
+   same tile carries an edge and a shadow, and a near-white favicon is redrawn in ink. */
 .node-mark {
   flex: none;
   display: grid;
@@ -1683,11 +2142,15 @@ p.card-processes {
   height: 26px;
   border-radius: var(--radius-sm);
   background: var(--icon-tile);
-  box-shadow: inset 0 0 0 1px var(--rim);
+  box-shadow: inset 0 0 0 1px var(--icon-edge);
   color: var(--text-dim);
 }
 
-.node-mark img {
+:root[data-theme='light'] .node-mark {
+  box-shadow: inset 0 0 0 1px var(--icon-edge), var(--icon-shadow);
+}
+
+.node-mark :is(img, .glyph) {
   width: 15px;
   height: 15px;
   object-fit: contain;
@@ -2707,7 +3170,438 @@ p.card-processes {
   font-style: italic;
 }
 
+/* --- applications table (overview) ----------------------------------------------------------- */
+
+.apps-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12.5px;
+}
+
+.apps-table th {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--separator);
+  text-align: left;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.apps-table td {
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--separator);
+}
+
+.apps-table tbody tr:last-child > td {
+  border-bottom: 0;
+}
+
+.apps-row {
+  cursor: pointer;
+}
+
+.apps-row.open > td {
+  border-bottom-color: transparent;
+}
+
+.apps-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 240px;
+}
+
+.apps-toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.apps-toggle:focus {
+  outline: none;
+}
+
+.apps-toggle:focus-visible {
+  color: var(--accent);
+}
+
+.apps-toggle .icon {
+  transition: transform 0.15s ease;
+}
+
+.apps-toggle[aria-expanded='true'] .icon {
+  transform: rotate(90deg);
+}
+
+.apps-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.apps-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.apps-name:hover {
+  text-decoration: underline;
+}
+
+.apps-desc {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
+  max-width: 44ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.apps-services {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.apps-strip {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.apps-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+.apps-ports {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.apps-more {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.apps-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.apps-actions > * + * {
+  margin-left: var(--space-2);
+}
+
+/* "There is a page here": the one action on a row that leaves Paddock. */
+.web-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.web-link:hover {
+  text-decoration: none;
+}
+
+.apps-actions-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The open row's services hang off it as a tree: a trunk drops from the application's icon and an
+   elbow branches to each service. The trunk sits under the icon's centre — the cell's 12px padding,
+   the 22px toggle, a 12px gap and half the 26px icon — and the branches are --tree-reach long. */
+.apps-table {
+  --tree-x: 59px;
+  --tree-reach: 22px;
+  --tree-line: var(--border);
+}
+
+.apps-row.open .apps-name-cell {
+  position: relative;
+}
+
+.apps-row.open .apps-name-cell::after {
+  content: '';
+  position: absolute;
+  left: calc(var(--tree-x) - 12px);
+  top: calc(50% + 17px);
+  bottom: -10px;
+  border-left: 1px solid var(--tree-line);
+  pointer-events: none;
+}
+
+.apps-detail-row > td {
+  padding: 0 12px 10px 0;
+}
+
+.apps-service-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 calc(var(--tree-x) + var(--tree-reach));
+}
+
+.apps-service {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px minmax(160px, 1.4fr) minmax(0, 1fr) 76px 64px minmax(80px, auto) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.apps-service:hover {
+  background: var(--fill-hover);
+}
+
+.apps-service::before,
+.apps-service::after {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-reach));
+  pointer-events: none;
+}
+
+/* The trunk, carried past this branch to the next one. */
+.apps-service::before {
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--tree-line);
+}
+
+/* The branch to this service's status dot. */
+.apps-service::after {
+  top: 50%;
+  width: var(--tree-reach);
+  border-top: 1px solid var(--tree-line);
+}
+
+/* The last branch is where the trunk ends, so it turns the corner instead of crossing it. */
+.apps-service:last-child::before {
+  bottom: auto;
+  height: calc(50% + 1px);
+  width: var(--tree-reach);
+  border-bottom: 1px solid var(--tree-line);
+  border-bottom-left-radius: 8px;
+}
+
+.apps-service:last-child::after {
+  display: none;
+}
+
+.apps-service.disabled > * {
+  opacity: 0.6;
+}
+
+.apps-service > .status {
+  justify-content: center;
+}
+
+.apps-service-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.apps-service-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.apps-service-command,
+.apps-service-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.apps-service-command {
+  color: var(--text-dim);
+}
+
+.apps-service-dir {
+  color: var(--text-faint);
+}
+
+.apps-service-error {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--danger);
+}
+
+.apps-service-meta {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.apps-empty {
+  position: relative;
+  margin: 0 0 0 calc(var(--tree-x) + var(--tree-reach));
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--separator);
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+
+.apps-empty a {
+  color: var(--accent);
+}
+
+.apps-empty::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--tree-reach));
+  top: 0;
+  height: calc(50% + 1px);
+  width: var(--tree-reach);
+  border-left: 1px solid var(--tree-line);
+  border-bottom: 1px solid var(--tree-line);
+  border-bottom-left-radius: 8px;
+  pointer-events: none;
+}
+
+/* Too narrow for every column: the folder goes first, then pid and uptime. */
+@media (max-width: 1280px) {
+  .apps-service {
+    grid-template-columns: 16px minmax(160px, 1fr) 76px 64px minmax(80px, auto) auto;
+  }
+
+  .apps-service-dir {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .apps-service {
+    grid-template-columns: 16px minmax(0, 1fr) minmax(60px, auto) auto;
+  }
+
+  .apps-service-meta {
+    display: none;
+  }
+}
+
 /* --- settings -------------------------------------------------------------------------------- */
+
+/* A list of tabs that stays put on the left, and the chosen pane beside it. */
+.settings-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* Sticks under the page toolbar while a long pane — the MCP activity — scrolls past it. */
+.settings-nav {
+  position: sticky;
+  top: 84px;
+}
+
+.settings-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  color: var(--text);
+  text-decoration: none;
+  transition: background 0.12s ease;
+}
+
+.settings-tab:hover {
+  background: var(--fill-hover);
+}
+
+.settings-tab.active {
+  background: var(--fill-selected);
+  box-shadow: inset 0 0 0 1px var(--separator);
+}
+
+.settings-tab-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--control);
+  color: var(--text-dim);
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.settings-tab.active .settings-tab-icon {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.25);
+}
+
+.settings-tab-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.settings-tab-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.settings-tab-blurb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
 
 /* Settings are read, not scanned like a table, so the column stops at a comfortable width. */
 .settings {
@@ -2715,24 +3609,104 @@ p.card-processes {
   flex-direction: column;
   gap: var(--space-5);
   width: 100%;
-  max-width: 740px;
+  max-width: 760px;
+  min-width: 0;
+}
+
+.settings-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--separator);
+}
+
+.settings-pane-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.25), var(--shadow-1);
+}
+
+.settings-pane-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.settings-pane-head p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
 }
 
 .settings-section {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .group-title {
-  padding: 0 14px;
-  font-size: 13px;
+  padding: 0 2px;
+  font-size: 11.5px;
   font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
 .group {
   overflow: hidden;
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
+}
+
+/* A secondary row's glyph: the same tile, without the accent, so only the group's lead row is lit. */
+.row-icon.muted {
+  background: var(--control);
+  color: var(--text-dim);
+  box-shadow: none;
+}
+
+.settings-url {
+  flex: 0 1 auto;
+  max-width: 55%;
+}
+
+@media (max-width: 1100px) {
+  .settings-layout {
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .settings-tab-blurb {
+    display: none;
+  }
+}
+
+/* Too narrow for two columns: the tabs become one scrolling row above the pane. */
+@media (max-width: 860px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-nav {
+    position: static;
+  }
+
+  .settings-nav ul {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .settings-tab {
+    flex: none;
+  }
 }
 
 .group > * + * {
@@ -2864,6 +3838,19 @@ p.card-processes {
   font-weight: 500;
 }
 
+/* A short label in a settings row — "Suggested" beside a title, "Added" where a button would be. */
+.row-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  vertical-align: 1px;
+}
+
+.row-title .row-tag {
+  margin-left: 6px;
+}
+
 .row-sub.danger {
   color: var(--danger);
 }
@@ -2882,6 +3869,23 @@ p.card-processes {
 
 .group-facts {
   margin: 0;
+}
+
+/* A shortcut's keys, which are also the button that changes them. A fixed width keeps the column
+   straight down the group, whatever each row's combination is. */
+.shortcut-keys {
+  flex: none;
+  min-width: 112px;
+  color: var(--text-dim);
+}
+
+.shortcut-keys .command-kbd {
+  color: var(--text);
+}
+
+.shortcut-keys.listening {
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 3px var(--focus);
 }
 
 .mcp-port-form {
@@ -3372,6 +4376,10 @@ p.card-processes {
   flex: none;
   color: var(--accent);
   opacity: 0.85;
+}
+
+.command-row-kbd {
+  flex: none;
 }
 
 .command-palette-foot {
@@ -4386,7 +5394,8 @@ p.card-processes {
 
   .link-button .icon,
   .group-toggle > .icon,
-  .switch-track::before {
+  .switch-track::before,
+  .level-bar-fill {
     transition: none;
   }
 }
@@ -4413,10 +5422,13 @@ p.card-processes {
     height: auto;
   }
 
-  /* Stacked above the page, so its hairline moves to the edge it now meets the page on. */
+  /* Stacked above the page: still a floating panel, inset on every side. */
   .sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--separator);
+    margin-right: var(--sidebar-inset);
+  }
+
+  .sidebar-top {
+    display: none;
   }
 
   .main {

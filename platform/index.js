@@ -23,6 +23,24 @@ export const platformName = impl.platformName;
 export const shellInvocation = impl.shellInvocation;
 
 /**
+ * The interpreter inside a Python virtual environment, as a path relative to the project.
+ * @param {string} venv the environment's directory, relative to the project (`.venv`)
+ * @returns {string}
+ */
+export const venvPython = impl.venvPython;
+
+/** The Python interpreter's name on PATH when no project tool or environment says otherwise. */
+export const pythonCommand = impl.pythonCommand;
+
+/**
+ * A wrapper script in the working directory (`gradlew`, `mvnw`), written the way this platform's
+ * shell will run it rather than look it up on PATH.
+ * @param {string} name
+ * @returns {string}
+ */
+export const localCommand = impl.localCommand;
+
+/**
  * Spawn options that make a child its own killable unit — its own process group on POSIX, a
  * hidden console on Windows. Merge these over the caller's cwd/env/stdio.
  * @param {{cwd?: string, env?: object}} [target] the spawn the options are for; no implementation
@@ -83,6 +101,15 @@ export const loginShellPath = impl.loginShellPath;
 export const listListeningPorts = impl.listListeningPorts;
 
 /**
+ * Every established TCP connection the OS will report, one row per socket end: a connection between
+ * two local processes appears twice, once from each side. Best effort — an empty list may mean the
+ * source failed, so nothing may be concluded from a connection's absence.
+ * @returns {Promise<{connections: {pid: number, localAddress: string, localPort: number,
+ *                                   remoteAddress: string, remotePort: number}[]}>}
+ */
+export const listConnections = impl.listConnections;
+
+/**
  * One snapshot of every visible process, keyed by pid. Taken in a single call: per-pid calls give a
  * torn view, where a parent can exit mid-walk. Every field but `pid` is nullable, and null always
  * means "could not determine" — never "none".
@@ -132,6 +159,13 @@ export const processExists = impl.processExists;
  *                   {status: 'unavailable', reason: string}>}
  */
 export const pickDirectory = impl.pickDirectory;
+
+/**
+ * Physical memory in bytes: the total, and what is in use once reclaimable cache is set aside — the
+ * figure the OS's own monitor shows, not the raw free-page count.
+ * @returns {Promise<{total: number, used: number}>}
+ */
+export const memoryUsage = impl.memoryUsage;
 
 // --- pseudo-terminals --------------------------------------------------------------------------
 

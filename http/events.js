@@ -16,11 +16,13 @@
  *                   changes, from one server-side scan shared by every client
  *   `mcp`           `{kind: 'sessions', sessions}` when an agent connects, identifies itself or
  *                   leaves, and `{kind: 'call', call}` for every tool call an agent makes
+ *   `system`        `{sampledAt, cpu, memory, disk, intervalMs}` on every tick, changed or not —
+ *                   the meters are a live trace, and a repeated value is still a reading
  */
 import { events as serviceEvents } from '../service.js';
 import * as service from '../service.js';
 import * as sse from './sse.js';
-import { PORT_SCAN_INTERVAL_MS } from '../config.js';
+import { PORT_SCAN_INTERVAL_MS, SYSTEM_STATS_INTERVAL_MS } from '../config.js';
 
 const LOG_BATCH_MS = 50;
 const MAX_BATCH_ENTRIES = 500;
@@ -31,6 +33,8 @@ const clients = new Set();
 let started = false;
 let logTimer = null;
 let portTimer = null;
+let systemTimer = null;
+let sampling = false;
 let lastPortFingerprint = null;
 let pendingLogs = [];
 
@@ -109,6 +113,23 @@ async function scanPorts() {
 }
 
 /**
+ * Sampled on the server for the same reason ports are: once per tick however many tabs are open,
+ * and not at all when none is. A tick that lands while the previous sample is still being read is
+ * skipped rather than queued behind it.
+ */
+async function sampleSystem() {
+  if (!clients.size || sampling) return;
+  sampling = true;
+  try {
+    broadcast('system', await service.getSystemStats());
+  } catch (err) {
+    console.error('[paddock] system sample failed:', err.message);
+  } finally {
+    sampling = false;
+  }
+}
+
+/**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  */
@@ -131,6 +152,10 @@ export function start() {
     portTimer = setInterval(scanPorts, PORT_SCAN_INTERVAL_MS);
     portTimer.unref();
   }
+  if (SYSTEM_STATS_INTERVAL_MS > 0) {
+    systemTimer = setInterval(sampleSystem, SYSTEM_STATS_INTERVAL_MS);
+    systemTimer.unref();
+  }
 }
 
 /** Unsubscribe, cancel the timers, and close every stream cleanly for shutdown. */
@@ -143,6 +168,8 @@ export function stop() {
 
   clearInterval(portTimer);
   portTimer = null;
+  clearInterval(systemTimer);
+  systemTimer = null;
   lastPortFingerprint = null;
   clearTimeout(logTimer);
   logTimer = null;

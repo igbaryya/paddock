@@ -12,6 +12,7 @@ import { useId, useState } from 'react';
 import Modal from './Modal.jsx';
 import Field, { nameError } from './Field.jsx';
 import Icon from './Icon.jsx';
+import Glyph from './Glyph.jsx';
 
 const TABS = [
   { value: 'processes', icon: 'terminal', label: 'Local processes' },
@@ -52,7 +53,7 @@ function AppChoices({ selected, onSelect }) {
           onClick={() => onSelect(app.kind)}
         >
           <span className="app-icon app-icon-md">
-            <img src={app.logo} alt="" />
+            <Glyph src={app.logo} />
           </span>
           <span className="app-choice-text">
             <span className="app-choice-name">{app.label}</span>

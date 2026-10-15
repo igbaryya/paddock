@@ -8,8 +8,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as api from './api.js';
 import { buildCommands } from './commands.js';
+import { actionFor, comboFromEvent } from './shortcuts.js';
+import { getShortcuts } from './useShortcuts.js';
 import { useLiveState } from './useLiveState.js';
 import { useFavicons } from './useFavicons.js';
+import { useSidebar } from './useSidebar.js';
+import { useNotifications } from './useNotifications.js';
+import { useDesktopUpdates } from './useDesktopUpdates.js';
+import { ToolbarCornerContext } from './components/Toolbar.jsx';
 import { Link, navigate, paths, useRoute } from './router.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import CommandPalette from './components/CommandPalette.jsx';
@@ -23,7 +29,6 @@ import OverviewPage from './pages/OverviewPage.jsx';
 import ApplicationPage from './pages/ApplicationPage.jsx';
 import PortsPage from './pages/PortsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
-import McpPage from './pages/McpPage.jsx';
 import McpSetupWizard from './components/McpSetupWizard.jsx';
 
 /**
@@ -64,6 +69,9 @@ export default function App() {
   const { applications, selected, logs, connection, reload, ports, refreshPorts } = live;
   // Both the overview and an application's page show the icons, so they are fetched once, here.
   const favicons = useFavicons(applications);
+  const sidebar = useSidebar();
+  const desktopUpdates = useDesktopUpdates();
+  const notifications = useNotifications(applications, desktopUpdates?.state ?? null);
   const [dialog, setDialog] = useState(null);
   const [actionError, setActionError] = useState(null);
   const [staleProcesses, setStaleProcesses] = useState([]);
@@ -237,28 +245,77 @@ export default function App() {
     [applications, route, selected, refreshPorts]
   );
 
+  // Settings is a page of its own, without the rail; leaving it goes back to wherever it was opened.
+  const inSettings = route.name === 'settings';
+  const settingsReturnRef = useRef(paths.overview());
+  if (!inSettings) settingsReturnRef.current = window.location.pathname;
+  const closeSettings = () => navigate(settingsReturnRef.current);
+
+  // The open application, for the shortcuts that act on it; anywhere else they leave the key alone.
+  const current = route.name === 'application' && selected ? selected : null;
+  const shortcutActions = {
+    newApplication: () => openApplicationForm(),
+    toggleSidebar: !inSettings && (() => sidebar.toggle()),
+    showShortcuts: () => navigate(paths.settings('shortcuts')),
+    goOverview: () => navigate(paths.overview()),
+    goPorts: () => navigate(paths.ports()),
+    goSettings: () => navigate(paths.settings()),
+    editApplication: current && (() => openApplicationForm(current)),
+    openLogs: current && (() => setPaletteIntent({ kind: 'logs', applicationId: current.id })),
+    openTerminal: current && (() => setPaletteIntent({ kind: 'terminal', applicationId: current.id })),
+    ...Object.fromEntries(
+      ['start', 'stop', 'restart'].map((action) => [
+        `${action}Application`,
+        current && !busy.has(current.id) && (() => runApplication(current.id, action)),
+      ])
+    ),
+  };
+
+  // Read on each press, so the listener is bound once rather than on every render.
+  const onKeyDownRef = useRef(null);
+  onKeyDownRef.current = (event) => {
+    const { bindings, recording } = getShortcuts();
+    if (recording || event.repeat) return;
+    const blocked = paletteOpen || dialog || mcpWizardOpen || isTypingTarget(event.target);
+
+    // Whatever is on top of Settings — the palette, a dialog — takes Escape instead.
+    if (inSettings && event.key === 'Escape' && !blocked) {
+      closeSettings();
+      return;
+    }
+
+    const combo = comboFromEvent(event);
+    if (!combo) return;
+    const action = actionFor(bindings, combo);
+
+    // The palette's own shortcut works from anywhere, a text field included: it is how you leave one.
+    if (action === 'palette') {
+      event.preventDefault();
+      setPaletteOpen((open) => !open);
+      return;
+    }
+
+    if (blocked) return;
+
+    if (isMod(event) && !event.altKey && !event.shiftKey && event.key >= '1' && event.key <= '9') {
+      const application = applications[Number(event.key) - 1];
+      if (!application) return;
+      event.preventDefault();
+      navigate(paths.application(application.id));
+      return;
+    }
+
+    const handler = action && shortcutActions[action];
+    if (!handler) return;
+    event.preventDefault();
+    handler();
+  };
+
   useEffect(() => {
-    const onKeyDown = (event) => {
-      if (isMod(event) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setPaletteOpen((open) => !open);
-        return;
-      }
-
-      if (paletteOpen || isTypingTarget(event.target)) return;
-
-      if (isMod(event) && event.key >= '1' && event.key <= '9') {
-        const index = Number(event.key) - 1;
-        const application = applications[index];
-        if (!application) return;
-        event.preventDefault();
-        navigate(paths.application(application.id));
-      }
-    };
-
+    const onKeyDown = (event) => onKeyDownRef.current(event);
     window.addEventListener('keydown', onKeyDown, true);
     return () => window.removeEventListener('keydown', onKeyDown, true);
-  }, [applications, paletteOpen]);
+  }, []);
 
   const banner = actionError ?? live.error;
   const dismissBanner = () => {
@@ -267,16 +324,22 @@ export default function App() {
   };
 
   return (
-    <div className="app">
-      <Sidebar
-        applications={applications}
-        route={route}
-        connection={connection}
-        portCount={ports.ports?.length ?? null}
-        onCreate={() => openApplicationForm()}
-        onOpenPalette={() => setPaletteOpen(true)}
-      />
+    <div className={`app${inSettings ? ' no-sidebar' : ''}`}>
+      {!inSettings && (
+        <Sidebar
+          applications={applications}
+          route={route}
+          connection={connection}
+          portCount={ports.ports?.length ?? null}
+          system={live.system}
+          onCreate={() => openApplicationForm()}
+          onOpenPalette={() => setPaletteOpen(true)}
+          collapsed={sidebar.collapsed}
+          onToggleCollapsed={sidebar.toggle}
+        />
+      )}
 
+      <ToolbarCornerContext.Provider value={notifications}>
       <main className="main">
         {route.name === 'overview' && (
           <OverviewPage
@@ -289,6 +352,13 @@ export default function App() {
             onRetry={() => reload()}
             onCreate={() => openApplicationForm()}
             onAction={runApplication}
+            onProcessAction={runProcess}
+            onEdit={openApplicationForm}
+            onEditProcess={(application, process) =>
+              application.kind === 'postgres'
+                ? setDialog({ kind: 'postgres', application })
+                : setDialog({ kind: 'process', applicationId: application.id, process })
+            }
           />
         )}
 
@@ -332,12 +402,11 @@ export default function App() {
           />
         )}
 
-        {route.name === 'mcp' && (
-          <McpPage busy={busy.has('mcp')} live={live.mcp} onAction={runMcp} />
-        )}
-
         {route.name === 'settings' && (
           <SettingsPage
+            tab={route.tab}
+            returnTo={settingsReturnRef.current}
+            mcp={{ busy: busy.has('mcp'), live: live.mcp, onAction: runMcp }}
             applications={applications}
             isBusy={(applicationId) => busy.has(applicationId)}
             onAutoStart={(applicationId, autoStart) =>
@@ -356,6 +425,7 @@ export default function App() {
           </EmptyState>
         )}
       </main>
+      </ToolbarCornerContext.Provider>
 
       {/* A notification rather than a banner: it floats over the page instead of pushing it down,
           so a failed click never moves the control that is about to be clicked again. */}

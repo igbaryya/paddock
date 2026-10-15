@@ -14,21 +14,26 @@ import { useCallback, useEffect, useState } from 'react';
 /** pushState does not fire popstate, so navigations are announced on this. */
 const NAVIGATED = 'paddock:navigated';
 
+/** The tabs of the Settings page, in the order its nav lists them. The first is `/settings` itself. */
+export const SETTINGS_TABS = ['general', 'startup', 'shortcuts', 'mcp', 'about'];
+
 export const paths = {
   overview: () => '/',
   application: (id) => `/applications/${encodeURIComponent(id)}`,
   ports: () => '/ports',
-  mcp: () => '/mcp-settings',
-  settings: () => '/settings',
+  mcp: () => '/settings/mcp',
+  settings: (tab = 'general') => (tab === 'general' ? '/settings' : `/settings/${tab}`),
 };
 
-/** @param {string} pathname @returns {{name: string, applicationId?: string}} */
+/** @param {string} pathname @returns {{name: string, applicationId?: string, tab?: string}} */
 function parse(pathname) {
   const segments = pathname.split('/').filter(Boolean);
   if (segments.length === 0) return { name: 'overview' };
   if (segments[0] === 'ports' && segments.length === 1) return { name: 'ports' };
-  if (segments[0] === 'mcp-settings' && segments.length === 1) return { name: 'mcp' };
-  if (segments[0] === 'settings' && segments.length === 1) return { name: 'settings' };
+  if (segments[0] === 'settings' && segments.length === 1) return { name: 'settings', tab: 'general' };
+  if (segments[0] === 'settings' && segments.length === 2 && SETTINGS_TABS.includes(segments[1])) {
+    return { name: 'settings', tab: segments[1] };
+  }
   if (segments[0] === 'applications' && segments.length === 2) {
     return { name: 'application', applicationId: decodeURIComponent(segments[1]) };
   }
@@ -39,8 +44,9 @@ export function useRoute() {
   const [route, setRoute] = useState(() => parse(window.location.pathname));
 
   useEffect(() => {
-    // `/mcp` is the agent endpoint, not a dashboard page — send old bookmarks to the settings UI.
-    if (window.location.pathname === '/mcp') {
+    // `/mcp` is the agent endpoint, not a dashboard page, and `/mcp-settings` is where MCP lived
+    // before it became a Settings tab — send both to the tab.
+    if (window.location.pathname === '/mcp' || window.location.pathname === '/mcp-settings') {
       navigate(paths.mcp(), { replace: true });
     }
   }, []);

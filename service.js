@@ -5,13 +5,17 @@
  * at divergent shapes of the same application. Nothing above this file talks to those modules
  * directly, which is what keeps process-management logic from being written twice.
  */
+import os from 'node:os';
 import * as applications from './applications.js';
 import * as manager from './process-manager.js';
 import * as terminals from './terminal-manager.js';
 import * as logStore from './log-store.js';
 import * as ports from './ports.js';
+import * as systemStats from './system-stats.js';
 import * as workspace from './workspace.js';
 import * as favicons from './favicons.js';
+import * as links from './links.js';
+import * as web from './web.js';
 import * as git from './git.js';
 import * as loginItem from './login-item.js';
 import * as cluster from './postgres/cluster.js';
@@ -20,7 +24,10 @@ import * as discovery from './postgres/discovery.js';
 import * as pool from './postgres/pool.js';
 import * as catalog from './postgres/catalog.js';
 import * as admin from './postgres/admin.js';
-import { DATA_DIR, MCP_AUTO_CONFIGURE, MCP_PORT_OVERRIDE, ROOT_DIR } from './config.js';
+import {
+  DATA_DIR, MCP_AUTO_CONFIGURE, MCP_PORT_OVERRIDE, ROOT_DIR, SYSTEM_STATS_INTERVAL_MS,
+} from './config.js';
+import * as mcpClients from './mcp-clients.js';
 import * as mcpListener from './mcp-listener.js';
 import * as mcpPrefs from './mcp-preferences.js';
 import * as mcpSessions from './mcp-sessions.js';
@@ -99,6 +106,7 @@ const findProcess = (config, processId) => {
 const processView = (config, proc) => {
   const applicationId = config.id;
   const state = runtimeOf(config).getState(config, proc);
+  const ports = portsOf(applicationId, proc.id);
   return {
     id: proc.id,
     name: proc.name,
@@ -119,10 +127,12 @@ const processView = (config, proc) => {
     uptimeMs: state.uptimeMs,
     // From the last port scan, never a fresh one: an application list must not block on OS work.
     // `null` means "no scan yet" and `[]` means "scanned, listening on nothing" — different answers.
-    ports: portsOf(applicationId, proc.id),
+    ports,
     // Where the icon came from and when, never the image: the bytes are fetched separately, and
     // only by a dashboard that is going to draw them.
     favicon: favicons.describe(proc.id),
+    // The page this run serves, `{port, url, title}`, or null when it serves none — or none yet.
+    web: state.status === 'running' ? web.describe(proc.id, state.startedAt, ports) : null,
   };
 };
 
@@ -177,6 +187,25 @@ const postgresView = ({ password, ...settings }) => ({
   passwordSet: password !== '',
 });
 
+/**
+ * What this application's processes have been seen connecting to: a sibling, a process of another
+ * application, or something Paddock does not run. Only callers that still exist are listed.
+ * @param {object} config an ApplicationConfig
+ */
+const linksView = (config) => {
+  const ids = new Set(processesOf(config).map((proc) => proc.id));
+  return links
+    .of(config.id)
+    .filter((link) => ids.has(link.processId))
+    .map(({ processId, port, target, firstSeenAt, lastSeenAt }) => ({
+      from: processId,
+      port,
+      target,
+      firstSeenAt,
+      lastSeenAt,
+    }));
+};
+
 /** @param {object} config an ApplicationConfig */
 const applicationView = (config) => {
   const processes = processesOf(config).map((proc) => processView(config, proc));
@@ -197,6 +226,7 @@ const applicationView = (config) => {
     updatedAt: config.updatedAt,
     processCounts: processCounts(processes),
     processes,
+    links: linksView(config),
   };
 };
 
@@ -211,6 +241,8 @@ const discardRuntime = (config, proc) => {
   runtimeOf(config).forget(config, proc);
   logStore.clear(config.id, proc.id);
   favicons.forget(proc.id);
+  web.forget(proc.id);
+  links.forget(config.id, proc.id);
 };
 
 /**
@@ -574,15 +606,15 @@ function rebuildPortIndex(owned) {
 }
 
 /**
- * A scan is the moment a process is known to be serving something, so it is when favicons are
- * looked for. Never awaited: `stopPort` and `getPort` scan too, and neither may wait on a dev server
- * answering HTTP. A newly found icon changes the application views, which is what the
- * `applications` event tells every dashboard to refetch.
+ * A scan is the moment a process is known to be serving something, so it is when favicons and web
+ * pages are looked for. Never awaited: `stopPort` and `getPort` scan too, and neither may wait on a
+ * dev server answering HTTP. A newly found icon or page changes the application views, which is what
+ * the `applications` event tells every dashboard to refetch.
  *
  * A PostgreSQL server is left out: it speaks its own protocol on its port, and an HTTP probe there
- * finds no icon and leaves an "invalid startup packet" line in its log.
+ * finds nothing and leaves an "invalid startup packet" line in its log.
  */
-function discoverFavicons(owned, managed) {
+function probeServices(owned, managed) {
   const probeable = new Set(
     managed.filter((m) => m.servesHttp).map((m) => portKey(m.applicationId, m.processId))
   );
@@ -598,6 +630,12 @@ function discoverFavicons(owned, managed) {
       if (changed) events.emit('applications', { reason: 'favicon' });
     })
     .catch((err) => console.error('[paddock] favicon discovery failed:', err.message));
+  web
+    .detect(targets)
+    .then((changed) => {
+      if (changed) events.emit('applications', { reason: 'web' });
+    })
+    .catch((err) => console.error('[paddock] web detection failed:', err.message));
 }
 
 /**
@@ -610,14 +648,31 @@ export async function listPorts({ force = false } = {}) {
   const usages = ports.correlate(snapshot, managed);
   const owned = managedListeners(usages);
   rebuildPortIndex(owned);
-  discoverFavicons(owned, managed);
+  probeServices(owned, managed);
+  if (links.record(ports.correlateLinks(snapshot, managed, usages))) {
+    events.emit('applications', { reason: 'links' });
+  }
   return { scannedAt: snapshot.scannedAt, ports: usages, degraded: snapshot.degraded };
 }
+
+// --- system load -------------------------------------------------------------------------------
+
+/**
+ * CPU, memory and free disk on the machine Paddock runs on. `intervalMs` is how often the stream
+ * repeats it, and 0 tells the dashboard there will be no repeat to show.
+ */
+export const getSystemStats = async () => ({
+  ...(await systemStats.sample()),
+  intervalMs: SYSTEM_STATS_INTERVAL_MS,
+});
 
 // --- favicons ----------------------------------------------------------------------------------
 
 /** What earlier runs found, loaded before the first view is built so the first render has icons. */
 export const loadFavicons = () => favicons.load();
+
+/** Links earlier runs saw, so a canvas opened before anything starts still draws its arrows. */
+export const loadLinks = () => links.load();
 
 /**
  * Every cached icon, as data URLs keyed by process id — the overview grid's one request for all of
@@ -1045,6 +1100,27 @@ async function autoConfigureMcp() {
   await mcpPrefs.update((prefs) => ({ ...prefs, port: bound, configured: true, enabled: true }));
 }
 
+// --- MCP clients -----------------------------------------------------------------------------
+
+/** The URL written is the one the MCP view shows: the bound port while running, else the chosen one. */
+const mcpClientContext = async () => ({ home: os.homedir(), url: (await mcpView()).url });
+
+/** Cursor and Claude Code, with whether their settings reach this Paddock and which one to suggest. */
+export async function listMcpClients() {
+  return { clients: await mcpClients.list(await mcpClientContext()) };
+}
+
+/**
+ * Write Paddock's entry into one client's MCP settings. Answers with the whole list, because adding
+ * to one client changes which one is suggested.
+ * @param {string} clientId
+ */
+export async function installMcpClient(clientId) {
+  const context = await mcpClientContext();
+  await mcpClients.install(clientId, context);
+  return { clients: await mcpClients.list(context) };
+}
+
 // --- MCP sessions and audit ------------------------------------------------------------------
 //
 // The HTTP layer owns the transports; this layer owns what is known about them. Every change is
@@ -1341,4 +1417,5 @@ export async function shutdown() {
   // Awaited: closeAll flushes queued JSONL writes, and server.js calls process.exit() right after.
   await logStore.closeAll();
   await mcpAudit.close();
+  await links.flush();
 }

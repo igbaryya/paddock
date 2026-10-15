@@ -21,6 +21,7 @@ import StatusDot from './StatusDot.jsx';
 import Icon from './Icon.jsx';
 import IconButton from './IconButton.jsx';
 import AppIcon from './AppIcon.jsx';
+import Glyph from './Glyph.jsx';
 import { ALIVE, formatUptime, uptimeOf } from '../format.js';
 
 /**
@@ -71,7 +72,7 @@ function NodeShell({
 function NodeMark({ favicon, glyph }) {
   return (
     <span className="node-mark" aria-hidden="true">
-      {favicon ? <img src={favicon} alt="" /> : <Icon name={glyph} size={14} />}
+      {favicon ? <Glyph src={favicon} /> : <Icon name={glyph} size={14} />}
     </span>
   );
 }
@@ -209,6 +210,39 @@ export function ConnectionNode({ settings, selected, onOpen }) {
       onOpen={onOpen}
     >
       <code className="node-url" title={url}>{url}</code>
+    </NodeShell>
+  );
+}
+
+/** OS names that are a database, for the glyph: what is known about an unmanaged listener is its name. */
+const DATABASE_NAMES = /postgres|redis|mysql|mariadb|mongo|memcache|clickhouse|elastic|opensearch/i;
+
+/**
+ * Something this application's processes connect to that is not one of them: a process of another
+ * application, or a listener Paddock does not run. It has no controls — it is not this
+ * application's to start or stop — and its border is dashed for the same reason.
+ * @param {{service: {target: object, ports: number[]}, selected: boolean, onOpen: () => void}} props
+ */
+export function ServiceNode({ service, selected, onOpen }) {
+  const { target, ports } = service;
+  const managed = target.kind === 'managed';
+  const title = (managed ? target.processName : target.name) ?? `:${ports[0]}`;
+  const glyph = DATABASE_NAMES.test(`${target.name ?? ''} ${target.processName ?? ''}`) ? 'database' : 'globe';
+  return (
+    <NodeShell
+      className="node-service"
+      selected={selected}
+      leading={<NodeMark glyph={glyph} />}
+      title={title}
+      openLabel={managed ? `Open ${target.applicationName}` : `${title} on this machine`}
+      onOpen={onOpen}
+    >
+      <p className="node-line">
+        {ports.map((port) => <span key={port} className="port-chip">:{port}</span>)}
+      </p>
+      <p className="node-facts">
+        <span>{managed ? `in ${target.applicationName}` : 'not run by Paddock'}</span>
+      </p>
     </NodeShell>
   );
 }

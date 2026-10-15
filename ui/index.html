@@ -20,6 +20,15 @@
         }
         document.documentElement.dataset.theme = theme;
         document.documentElement.style.colorScheme = theme;
+        // Keep the key in step with src/useSidebar.js.
+        try {
+          document.documentElement.dataset.sidebar =
+            localStorage.getItem('paddock.sidebar') === 'collapsed' ? 'collapsed' : 'expanded';
+        } catch (e) {}
+        // The desktop window on macOS has no title bar; the sidebar makes room for its traffic lights.
+        if (window.paddockDesktop && window.paddockDesktop.platform === 'darwin') {
+          document.documentElement.classList.add('desktop-mac');
+        }
       })();
     </script>
   </head>

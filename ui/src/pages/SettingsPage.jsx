@@ -1,11 +1,11 @@
 /**
- * Settings for Paddock itself, as opposed to anything it runs. Laid out the way the OS lays out its
- * own settings — titled groups of rows, each row a label on the left and its control on the right.
+ * Settings for Paddock itself, as opposed to anything it runs: a list of tabs on the left and one
+ * pane on the right, the way the OS lays out its own settings. Each tab is a real URL
+ * (`/settings/mcp`), so a link to the MCP URL survives a refresh and can be pasted.
  *
+ * Inside a pane, titled groups of rows — each row a label on the left and its control on the right.
  * Startup is one group because it is one sequence: the login entry starts Paddock, and Paddock starts
- * the chosen applications one after another. The facts about this copy — what the login entry would
- * start, where the data lives — are for when something is wrong, so they fold away behind a one-line
- * summary instead of being the bulk of the page.
+ * the chosen applications one after another.
  *
  * The login switch and the facts are fetched here: nothing changes them except this page, so there
  * is nothing to push. The applications are the shell's live list instead, because they change from
@@ -15,13 +15,24 @@ import { useEffect, useState } from 'react';
 import * as api from '../api.js';
 import CopyButton from '../components/CopyButton.jsx';
 import Icon from '../components/Icon.jsx';
+import McpSettings from '../components/McpSettings.jsx';
 import SettingsGroup from '../components/SettingsGroup.jsx';
+import ShortcutsSettings from '../components/ShortcutsSettings.jsx';
 import Switch from '../components/Switch.jsx';
 import ThemeSwitcher from '../components/ThemeSwitcher.jsx';
 import Toolbar from '../components/Toolbar.jsx';
 import UpdatesGroup from '../components/UpdatesGroup.jsx';
+import { Link, paths } from '../router.jsx';
 import { useDesktopUpdates } from '../useDesktopUpdates.js';
 import { useTheme } from '../useTheme.js';
+
+const TABS = [
+  { id: 'general', icon: 'settings', label: 'General', blurb: 'Appearance and updates.' },
+  { id: 'startup', icon: 'power', label: 'Startup', blurb: 'What starts at login, and in what order.' },
+  { id: 'shortcuts', icon: 'keyboard', label: 'Shortcuts', blurb: 'The keys for what you do most.' },
+  { id: 'mcp', icon: 'braces', label: 'MCP', blurb: 'Where agents connect, and what they did.' },
+  { id: 'about', icon: 'info', label: 'About', blurb: 'This copy of Paddock and where it keeps data.' },
+];
 
 /** @param {{children: React.ReactNode}} props a row that only says something */
 const TextRow = ({ children }) => (
@@ -212,66 +223,87 @@ function Startup({ startAtLogin, unreadable, saving, onStartAtLogin, application
 const folderName = (directory) => directory.split(/[\\/]/).filter(Boolean).pop() ?? directory;
 
 /**
- * The facts, folded behind the three that identify the copy at a glance. "Runs" is shown only when
- * the entry is stale: otherwise it is exactly this copy's node and install folder, listed above.
+ * The facts about this copy. "Runs" is shown only when the entry is stale: otherwise it is exactly
+ * this copy's node and install folder, listed above.
  * @param {{instance: object, startAtLogin: object}} props
  */
 function AboutThisCopy({ instance, startAtLogin }) {
-  const [open, setOpen] = useState(false);
   const stale = startAtLogin.problems.length > 0 && startAtLogin.runs;
 
   return (
-    <SettingsGroup title="About this copy" note="What Start at login would start, and where it keeps its data.">
-      <button
-        type="button"
-        className="group-row group-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-      >
-        <span className="row-icon"><Icon name="info" size={14} /></span>
-        <span className="row-text">
-          <span className="row-title">{folderName(instance.installDir)}</span>
-          <span className="row-sub">pid {instance.pid} · node {instance.nodeVersion}</span>
-        </span>
-        <Icon name="chevron" size={14} className={open ? 'rotated' : ''} />
-      </button>
+    <>
+      <SettingsGroup title="This copy">
+        <div className="group-row">
+          <span className="row-icon"><Icon name="folder" size={14} /></span>
+          <span className="row-text">
+            <span className="row-title">{folderName(instance.installDir)}</span>
+            <span className="row-sub">pid {instance.pid} · node {instance.nodeVersion}</span>
+          </span>
+        </div>
+        <dl className="group-facts">
+          <PathFact label="Install" value={instance.installDir} />
+          <PathFact label="Data" value={instance.dataDir} />
+          <PathFact label="Node" value={instance.nodePath} />
+        </dl>
+      </SettingsGroup>
 
-      {open && (
-        <>
+      {startAtLogin.supported && (
+        <SettingsGroup title="Login entry" note="What Start at login runs, and where its output goes.">
           <dl className="group-facts">
-            <PathFact label="Install" value={instance.installDir} />
-            <PathFact label="Data" value={instance.dataDir} />
-            <PathFact label="Node" value={instance.nodePath} />
+            <PathFact label="File" value={startAtLogin.location} />
+            {stale && (
+              <Fact label="Runs">
+                <code>{[startAtLogin.runs.program, ...startAtLogin.runs.args].join(' ')}</code>
+              </Fact>
+            )}
+            <PathFact label="Log" value={startAtLogin.logFile} />
           </dl>
-          {startAtLogin.supported && (
-            <>
-              <p className="group-subhead">Login entry</p>
-              <dl className="group-facts">
-                <PathFact label="File" value={startAtLogin.location} />
-                {stale && (
-                  <Fact label="Runs">
-                    <code>{[startAtLogin.runs.program, ...startAtLogin.runs.args].join(' ')}</code>
-                  </Fact>
-                )}
-                <PathFact label="Log" value={startAtLogin.logFile} />
-              </dl>
-            </>
-          )}
-        </>
+        </SettingsGroup>
       )}
-    </SettingsGroup>
+    </>
+  );
+}
+
+/** @param {{tab: string}} props */
+function SettingsNav({ tab }) {
+  return (
+    <nav className="settings-nav" aria-label="Settings">
+      <ul>
+        {TABS.map((item) => {
+          const active = item.id === tab;
+          return (
+            <li key={item.id}>
+              <Link
+                to={paths.settings(item.id)}
+                className={`settings-tab${active ? ' active' : ''}`}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span className="settings-tab-icon"><Icon name={item.icon} size={15} /></span>
+                <span className="settings-tab-text">
+                  <span className="settings-tab-label">{item.label}</span>
+                  <span className="settings-tab-blurb">{item.blurb}</span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
 
 /**
- * @param {{applications: object[], isBusy: (id: string) => boolean,
- *          onAutoStart: (applicationId: string, autoStart: boolean) => void}} props
+ * @param {{tab: string, returnTo: string, applications: object[], isBusy: (id: string) => boolean,
+ *          onAutoStart: (applicationId: string, autoStart: boolean) => void,
+ *          mcp: {busy: boolean, live: object, onAction: (action: string, body?: object) => Promise<void>}}} props
+ *   `returnTo` is the page Settings was opened from, which its back button leads to
  */
-export default function SettingsPage({ applications, isBusy, onAutoStart }) {
+export default function SettingsPage({ tab = 'general', returnTo, applications, isBusy, onAutoStart, mcp }) {
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const updates = useDesktopUpdates();
+  const current = TABS.find((item) => item.id === tab) ?? TABS[0];
 
   useEffect(() => {
     const controller = new AbortController();
@@ -298,27 +330,65 @@ export default function SettingsPage({ applications, isBusy, onAutoStart }) {
 
   return (
     <>
-      <Toolbar title="Settings" subtitle="Paddock itself: how it starts, and where it keeps things." />
+      <Toolbar
+        title="Settings"
+        subtitle="Paddock itself: how it looks, how it starts, and where agents connect."
+        back={{ to: returnTo, label: 'Close settings (Esc)' }}
+      />
 
-      <div className="settings">
-        {error && (
-          <p className="notice danger" role="alert">
-            <Icon name="alert" />
-            <span>{error}</span>
-          </p>
-        )}
-        {updates && <UpdatesGroup updates={updates} />}
-        <Appearance />
-        <Startup
-          startAtLogin={settings?.startAtLogin ?? null}
-          unreadable={!settings && error !== null}
-          saving={saving}
-          onStartAtLogin={setStartAtLogin}
-          applications={applications}
-          isBusy={isBusy}
-          onAutoStart={onAutoStart}
-        />
-        {settings && <AboutThisCopy instance={settings.instance} startAtLogin={settings.startAtLogin} />}
+      <div className="settings-layout">
+        <SettingsNav tab={current.id} />
+
+        <div className="settings">
+          <header className="settings-pane-head">
+            <span className="settings-pane-icon"><Icon name={current.icon} size={18} /></span>
+            <div>
+              <h2>{current.label}</h2>
+              <p>{current.blurb}</p>
+            </div>
+          </header>
+
+          {error && current.id !== 'mcp' && (
+            <p className="notice danger" role="alert">
+              <Icon name="alert" />
+              <span>{error}</span>
+            </p>
+          )}
+
+          {current.id === 'general' && (
+            <>
+              <Appearance />
+              {updates && <UpdatesGroup updates={updates} />}
+            </>
+          )}
+
+          {current.id === 'startup' && (
+            <Startup
+              startAtLogin={settings?.startAtLogin ?? null}
+              unreadable={!settings && error !== null}
+              saving={saving}
+              onStartAtLogin={setStartAtLogin}
+              applications={applications}
+              isBusy={isBusy}
+              onAutoStart={onAutoStart}
+            />
+          )}
+
+          {current.id === 'shortcuts' && <ShortcutsSettings />}
+
+          {current.id === 'mcp' && <McpSettings busy={mcp.busy} live={mcp.live} onAction={mcp.onAction} />}
+
+          {current.id === 'about' &&
+            (settings ? (
+              <AboutThisCopy instance={settings.instance} startAtLogin={settings.startAtLogin} />
+            ) : (
+              !error && (
+                <p className="empty-inline" role="status">
+                  Loading…
+                </p>
+              )
+            ))}
+        </div>
       </div>
     </>
   );

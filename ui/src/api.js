@@ -151,6 +151,17 @@ export const listPorts = ({ force = false } = {}, signal) =>
 export const stopPort = (port) => request('POST', `/ports/${port}/stop`);
 
 /**
+ * One reading of the machine's CPU, memory and disk — the meters' first fill. Every later reading
+ * arrives as a `system` event on the stream.
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{sampledAt: string, intervalMs: number,
+ *   cpu: {percent: number|null, cores: number, loadAverage: number[]|null},
+ *   memory: {total: number, used: number, percent: number}|null,
+ *   disk: {path: string, total: number, used: number, free: number, percent: number}|null}>}
+ */
+export const getSystemStats = (signal) => request('GET', '/system', { signal });
+
+/**
  * Every cached favicon as a data URL, keyed by process id. Fetched only when the versions carried on
  * the application list change, never on every refetch of that list.
  * @param {AbortSignal} [signal]
@@ -199,6 +210,19 @@ export const updateMcp = (patch) => request('PATCH', '/mcp', { body: patch });
 export const startMcp = () => request('POST', '/mcp/start');
 export const stopMcp = () => request('POST', '/mcp/stop');
 export const restartMcp = () => request('POST', '/mcp/restart');
+
+/**
+ * Cursor and Claude Code: whether each is installed, whether its MCP settings reach this Paddock, and
+ * which one to suggest. @param {AbortSignal} [signal]
+ * @returns {Promise<{clients: {id: string, name: string, detected: boolean, suggested: boolean,
+ *   state: 'missing'|'configured'|'stale'|'unreadable', displayPath: string,
+ *   configuredUrl: string|null, error: string|null}[]}>}
+ */
+export const listMcpClients = (signal) => request('GET', '/mcp/clients', { signal });
+
+/** Write Paddock's entry into that client's MCP settings. @param {string} clientId */
+export const installMcpClient = (clientId) =>
+  request('POST', `/mcp/clients/${encodeURIComponent(clientId)}`);
 
 /** Agents connected over MCP right now, most recently seen first. @param {AbortSignal} [signal] */
 export const listMcpSessions = (signal) => request('GET', '/mcp/sessions', { signal });

@@ -1,7 +1,7 @@
 /**
- * The Paddock server as the app runs it: the same server.js `npm start` runs, forked into an Electron
- * utility process. The dashboard and /mcp are exactly what a checkout serves, and nothing about
- * supervising dev servers moves into the app.
+ * The Paddock server as the app runs it: the same server.js, forked into an Electron utility process.
+ * From a checkout the window loads Vite instead of this port. A packaged app still shows the
+ * dashboard this server serves. Nothing about supervising dev servers moves into the app.
  *
  * The app starts a server only on a free port. A Paddock already on it — a checkout's login agent, an
  * `npm start` — is used as it is. Anything else holding it is for the user to resolve, because that
@@ -25,7 +25,7 @@ const PROBE_TIMEOUT_MS = 5_000;
 const TAIL_LINES = 20;
 
 /** Printed last by server.js, so it is the line that means "usable" — and it carries the URL. */
-const READY_LINE = /^\[paddock\] UI\s+(\S+)/;
+const READY_LINE = /^\[paddock\] (?:UI|API)\s+(\S+)/;
 
 /** Over the server's own shutdown ceiling, so its SIGKILL escalation always gets to run first. */
 const STOP_MARGIN_MS = 5_000;

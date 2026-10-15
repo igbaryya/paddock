@@ -4,7 +4,8 @@
  * Same shape as the process logs — a bounded ring in memory for the dashboard, an append-only JSONL
  * file behind it — and for the same reason: the ring answers "what just happened" cheaply, the
  * file keeps the history across a restart. Arguments are stored as the agent sent them except for
- * SQL `params`, whose values can be credentials or personal data and are reduced to their types.
+ * SQL `params` and process `env` values can contain credentials or personal data, so params are
+ * reduced to their types and environment values are replaced while retaining the variable names.
  */
 import { appendLine, closeSink, createSink, tailLines } from './jsonl-sink.js';
 import { MCP_AUDIT_BUFFER_CALLS, MCP_AUDIT_FILE, MCP_AUDIT_FILE_MAX_BYTES } from './config.js';
@@ -102,7 +103,10 @@ function redact(args) {
   if (!args || typeof args !== 'object') return null;
   const out = {};
   for (const [key, value] of Object.entries(args)) {
-    out[key] = key === 'params' && Array.isArray(value) ? value.map(typeOf) : clip(value);
+    if (key === 'params' && Array.isArray(value)) out[key] = value.map(typeOf);
+    else if (key === 'env' && value && typeof value === 'object' && !Array.isArray(value)) {
+      out[key] = Object.fromEntries(Object.keys(value).map((name) => [name, '[redacted]']));
+    } else out[key] = clip(value);
   }
   return out;
 }

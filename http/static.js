@@ -43,7 +43,7 @@ const NOT_BUILT_PAGE = `<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>paddock — UI not built</title>
+    <title>paddock — API only</title>
     <style>
       body { margin: 0; display: grid; place-items: center; min-height: 100vh; color: #e6e8ec;
              font: 14px/1.6 ui-sans-serif, system-ui, sans-serif; background: #14161a; }
@@ -55,11 +55,10 @@ const NOT_BUILT_PAGE = `<!doctype html>
   </head>
   <body>
     <main>
-      <h1>The dashboard has not been built yet</h1>
-      <p>The API and the MCP endpoint are already running — only the static UI is missing.</p>
-      <p>Build it once with <code>npm run build</code>, then reload this page.</p>
-      <p>While working on the UI itself, <code>npm run dev</code> serves it from Vite with
-         hot reload and proxies <code>/api</code> back to this server.</p>
+      <h1>This address is the API, not the app</h1>
+      <p>The API and the MCP endpoint are running. There is no dashboard to open here.</p>
+      <p><code>npm start</code> opens the Paddock window. It does not need a build.</p>
+      <p>A static dashboard is served from this address only after <code>npm run build</code>.</p>
     </main>
   </body>
 </html>

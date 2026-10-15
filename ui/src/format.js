@@ -30,6 +30,23 @@ export const uptimeOf = (process, now) =>
     ? now - Date.parse(process.startedAt)
     : process.uptimeMs;
 
+const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
+
+/**
+ * Binary multiples under the familiar names, the way the OS's own monitor and Finder label memory.
+ * @param {number|null} bytes
+ */
+export const formatBytes = (bytes) => {
+  if (!Number.isFinite(bytes) || bytes < 0) return '—';
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < BYTE_UNITS.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${BYTE_UNITS[unit]}`;
+};
+
 /** @param {object} process a ProcessView @returns {string|null} null when it never exited */
 export const exitSummary = (process) => {
   if (process.exitSignal) return `exit on ${process.exitSignal}`;

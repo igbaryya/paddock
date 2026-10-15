@@ -303,7 +303,7 @@ suite('processCounts counts a disabled process in total but not in enabled', asy
 // ports this process was found listening on after.
 const PROCESS_VIEW_KEYS = [
   'command', 'enabled', 'env', 'exitCode', 'exitSignal', 'favicon', 'id', 'lastError', 'name', 'pid', 'ports',
-  'repositoryPath', 'restarts', 'startedAt', 'status', 'stoppedAt', 'uptimeMs', 'workingDirectory',
+  'repositoryPath', 'restarts', 'startedAt', 'status', 'stoppedAt', 'uptimeMs', 'web', 'workingDirectory',
 ];
 
 suite('ProcessView is the config fields plus the flattened runtime state', async (t) => {

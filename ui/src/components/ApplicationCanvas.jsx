@@ -1,10 +1,16 @@
 /**
  * An application as a canvas: the application on the left, what it runs in columns beside it, curves
- * showing what belongs to what, and a drawer over the right for whichever card is selected.
+ * showing what calls what, and a drawer over the right for whichever card is selected.
  *
  * This file is the translation between the application view and the canvas — which cards exist,
  * which of them connect, and where each one sits. The surface itself knows none of that, and the
  * cards know nothing about layout.
+ *
+ * The arrows come from the view's `links`: connections a port scan saw a process holding open to a
+ * local port. A link to a sibling is an arrow between two process cards; a link to anything else —
+ * another application's process, a database Paddock does not run — gets a card of its own, at the
+ * far right. The application card connects only to the processes nothing else was seen calling,
+ * so with no links at all it fans out to every process, as it always did.
  *
  * Positions are the user's and are kept on the manager, so an arrangement survives a refresh and
  * the next launch. Until someone moves a card it has no stored position and `autoLayout` places it,
@@ -20,7 +26,9 @@ import {
   ConnectionNode,
   PlaceholderNode,
   ProcessNode,
+  ServiceNode,
 } from './CanvasNodes.jsx';
+import { navigate, paths } from '../router.jsx';
 import { useSecondsTick } from '../useSecondsTick.js';
 
 /**
@@ -30,6 +38,7 @@ import { useSecondsTick } from '../useSecondsTick.js';
 const ROOT = '@application';
 const CONNECTION = '@connection';
 const PLACEHOLDER = '@placeholder';
+const SERVICE = '@service:';
 
 /** Auto-layout geometry: a column step wide enough to leave a card's width plus room for a curve. */
 const COLUMN_X = 372;
@@ -38,23 +47,127 @@ const ROW_Y = 156;
 const COLUMN_ROWS = 4;
 
 /**
- * Where each card sits when nobody has moved it: the application first, then what it runs in
- * columns to its right, in configured order — which for processes is also start order.
+ * One card per process of another application, whatever ports it was reached on; one per port for
+ * anything Paddock does not run, since all that is known about it is the port and an OS name.
+ */
+const serviceId = ({ target, port }) =>
+  target.kind === 'managed' ? `${SERVICE}${target.applicationId}/${target.processId}` : `${SERVICE}${port}`;
+
+/**
+ * The links as the canvas draws them: arrows between sibling processes, and cards for whatever
+ * outside the application they reach.
  * @param {object} application an ApplicationView
  */
-function autoLayout(application) {
-  const { processes } = application;
-  const rows = Math.min(processes.length, COLUMN_ROWS);
-  const positions = {
-    // Centred on the column beside it, so the curves fan out evenly rather than all bending down.
-    [ROOT]: { x: 0, y: Math.round((Math.max(rows, 1) - 1) * ROW_Y / 2) },
+function graphOf(application) {
+  const ids = new Set(application.processes.map((process) => process.id));
+  const calls = new Map();
+  const services = new Map();
+  for (const link of application.links ?? []) {
+    const { target } = link;
+    const sibling = target.kind === 'managed' && target.applicationId === application.id && ids.has(target.processId);
+    const to = sibling ? target.processId : serviceId(link);
+    if (!sibling) {
+      if (!services.has(to)) services.set(to, { id: to, target, ports: [] });
+      const service = services.get(to);
+      if (!service.ports.includes(link.port)) service.ports.push(link.port);
+    }
+    calls.set(`${link.from}->${to}`, { from: link.from, to });
+  }
+  for (const service of services.values()) service.ports.sort((a, b) => a - b);
+  return { calls: [...calls.values()], services: [...services.values()] };
+}
+
+/**
+ * The processes the application card points at: those nothing was seen calling. A cycle that
+ * nothing outside it calls into would then hang off nothing, so one member of each such cycle is
+ * added as well.
+ */
+function entryPoints(processes, calls) {
+  const next = new Map();
+  for (const { from, to } of calls) {
+    if (!next.has(from)) next.set(from, []);
+    next.get(from).push(to);
+  }
+  const called = new Set(calls.map((call) => call.to));
+  const reached = new Set();
+  const walk = (id) => {
+    const queue = [id];
+    while (queue.length) {
+      const current = queue.shift();
+      if (reached.has(current)) continue;
+      reached.add(current);
+      queue.push(...(next.get(current) ?? []));
+    }
   };
-  processes.forEach((process, index) => {
-    positions[process.id] = {
-      x: COLUMN_X * (1 + Math.floor(index / COLUMN_ROWS)),
-      y: ROW_Y * (index % COLUMN_ROWS),
-    };
-  });
+  const roots = processes.filter((process) => !called.has(process.id)).map((process) => process.id);
+  roots.forEach(walk);
+  for (const process of processes) {
+    if (reached.has(process.id)) continue;
+    roots.push(process.id);
+    walk(process.id);
+  }
+  return roots;
+}
+
+/**
+ * How many calls deep each process sits, so a callee lands to the right of everything calling it.
+ * Bounded by the process count, which is what stops a cycle relaxing forever.
+ */
+function depthsOf(processes, calls) {
+  const depth = new Map(processes.map((process) => [process.id, 0]));
+  for (let pass = 0; pass < processes.length; pass += 1) {
+    let moved = false;
+    for (const { from, to } of calls) {
+      if (!depth.has(from) || !depth.has(to)) continue;
+      const deeper = depth.get(from) + 1;
+      if (deeper > depth.get(to) && deeper < processes.length) {
+        depth.set(to, deeper);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+  return depth;
+}
+
+/**
+ * Where each card sits when nobody has moved it: the application first, then what it runs in
+ * columns to its right — one group of columns per call depth, in configured order within each. A
+ * card outside the application sits one column past its deepest caller, below that column's
+ * processes, so an arrow to it never has to cross a card to get there.
+ * @param {object} application an ApplicationView
+ * @param {{calls: object[], services: object[]}} graph
+ */
+function autoLayout(application, graph) {
+  const { processes } = application;
+  const depth = depthsOf(processes, graph.calls);
+  const groups = [];
+  for (const process of processes) {
+    const level = depth.get(process.id);
+    (groups[level] ??= []).push(process.id);
+  }
+  for (const service of graph.services) {
+    const callers = graph.calls.filter((call) => call.to === service.id && depth.has(call.from));
+    const level = Math.max(0, ...callers.map((call) => depth.get(call.from) + 1));
+    (groups[level] ??= []).push(service.id);
+  }
+  const ordered = groups.filter(Boolean);
+
+  const positions = {};
+  let column = 0;
+  let firstRows = 0;
+  for (const group of ordered) {
+    group.forEach((id, index) => {
+      positions[id] = {
+        x: COLUMN_X * (1 + column + Math.floor(index / COLUMN_ROWS)),
+        y: ROW_Y * (index % COLUMN_ROWS),
+      };
+    });
+    if (column === 0) firstRows = Math.min(group.length, COLUMN_ROWS);
+    column += Math.ceil(group.length / COLUMN_ROWS);
+  }
+  // Centred on the column beside it, so the curves fan out evenly rather than all bending down.
+  positions[ROOT] = { x: 0, y: Math.round((Math.max(firstRows, 1) - 1) * ROW_Y / 2) };
   // A defined server has exactly one process, so its connection card goes one column further out.
   positions[CONNECTION] = { x: COLUMN_X * 2, y: 0 };
   positions[PLACEHOLDER] = { x: COLUMN_X, y: 0 };
@@ -121,7 +234,8 @@ export default function ApplicationCanvas({
         }
       : null;
 
-  const placement = { ...autoLayout(application), ...moved };
+  const graph = graphOf(application);
+  const placement = { ...autoLayout(application, graph), ...moved };
   const at = (id) => placement[id] ?? { x: 0, y: 0 };
 
   const nodes = [
@@ -168,13 +282,30 @@ export default function ApplicationCanvas({
           },
         ]
       : []),
+    ...graph.services.map((service) => ({
+      id: service.id,
+      ...at(service.id),
+      render: ({ selected }) => (
+        <ServiceNode
+          service={service}
+          selected={selected}
+          // Another application's process opens that application; anything else has nowhere to go.
+          onOpen={
+            service.target.kind === 'managed'
+              ? () => navigate(paths.application(service.target.applicationId))
+              : () => setSelection({ kind: 'service', id: service.id })
+          }
+        />
+      ),
+    })),
     ...(placeholder
       ? [{ id: PLACEHOLDER, ...at(PLACEHOLDER), render: () => <PlaceholderNode {...placeholder} /> }]
       : []),
   ];
 
   const edges = [
-    ...application.processes.map((process) => ({ from: ROOT, to: process.id })),
+    ...entryPoints(application.processes, graph.calls).map((id) => ({ from: ROOT, to: id })),
+    ...graph.calls.map((call) => ({ ...call, arrow: true })),
     ...(placeholder ? [{ from: ROOT, to: PLACEHOLDER }] : []),
     // The connection hangs off the server it connects to, not off the application.
     ...(application.postgres && server ? [{ from: server.id, to: CONNECTION }] : []),
@@ -195,10 +326,21 @@ export default function ApplicationCanvas({
     onSaveLayout(kept);
   };
 
-  /** Which card was clicked decides what the drawer shows; the placeholder opens a form instead. */
+  /** Back to the auto-layout, which is the only way a canvas arranged before its links were known
+   *  gets them laid out left to right. */
+  const onArrange = () => {
+    setMoved({});
+    onSaveLayout({});
+  };
+
+  /**
+   * Which card was clicked decides what the drawer shows; the placeholder opens a form instead. A
+   * card outside the application has no drawer — selecting it only lights up what reaches it.
+   */
   const onSelect = (id) => {
     if (id === ROOT) return setSelection({ kind: 'application', id });
     if (id === CONNECTION) return setSelection({ kind: 'connection', id });
+    if (id?.startsWith(SERVICE)) return setSelection({ kind: 'service', id });
     if (id && id !== PLACEHOLDER) return setSelection({ kind: 'process', id });
     setSelection(null);
   };
@@ -211,10 +353,11 @@ export default function ApplicationCanvas({
         selectedId={selection?.id ?? null}
         onSelect={onSelect}
         onMove={onMove}
+        onArrange={Object.keys(moved).length ? onArrange : undefined}
         label={`${application.name} services`}
       />
 
-      {selection && (
+      {selection && selection.kind !== 'service' && (
         // Keyed by the card: the tabs belong to the thing being looked at, and carrying "Output"
         // across a switch to a card that has none would leave the drawer blank.
         <NodeDetails

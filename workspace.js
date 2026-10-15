@@ -1,7 +1,8 @@
 /**
  * Read-only inspection of the user's project directories, for the process form: the OS folder dialog
  * that chooses one, which directories live under a path when there is no dialog to show, which
- * package.json scripts a directory offers, and what its .env files already set. Nothing here is
+ * package.json scripts a directory offers, what it is built on (stacks.js, which has its own fixed
+ * list of files it may read), and what its .env files already set. Nothing here is
  * configuration and nothing here is cached — every answer is what the disk says at the moment it is
  * asked.
  *
@@ -24,6 +25,7 @@ import {
   assertDirectory,
 } from './applications.js';
 import * as platform from './platform/index.js';
+import { detectStacks } from './stacks.js';
 
 /** Directories in one browse. The picker filters as you type, so a complete listing is not the point. */
 const MAX_ENTRIES = 500;
@@ -220,8 +222,18 @@ async function readPackage(dir) {
     name: typeof parsed.name === 'string' ? parsed.name : null,
     manager: declaredManager(parsed.packageManager),
     scripts: isObject(parsed.scripts) ? parsed.scripts : {},
+    main: typeof parsed.main === 'string' ? parsed.main : null,
+    dependencies: dependencyNames(parsed),
   };
 }
+
+/** Names only: which framework a package is built on is the question, never which version. */
+const dependencyNames = (parsed) =>
+  new Set(
+    ['dependencies', 'devDependencies']
+      .filter((field) => isObject(parsed[field]))
+      .flatMap((field) => Object.keys(parsed[field]))
+  );
 
 /** What a process manager is being pointed at, nine times out of ten. */
 const scriptRank = (name) => (name === 'dev' ? 0 : name === 'start' ? 1 : 2);
@@ -327,24 +339,31 @@ async function readEnvFile(dir, name) {
 
 /**
  * What the process form can fill in for itself once it knows the directory the command will run in:
- * the scripts that directory's package.json declares, and the variables its .env files already set.
+ * the scripts that directory's package.json declares, the stacks it is built on with the commands
+ * that usually start them, and the variables its .env files already set.
  *
- * One listing drives all of it — the package.json, the lockfile that says which manager runs it, and
- * the set of .env files — because they are all the same question about the same directory.
+ * One listing drives all of it — the package.json, the lockfile that says which manager runs it, the
+ * manifests that give a stack away, and the set of .env files — because they are all the same
+ * question about the same directory.
  * @param {string} requested absolute path
  * @returns {Promise<{path: string, packageName: string|null, packageManager: string|null,
- *                    scripts: object[], envFiles: object[]}>}
+ *                    scripts: object[], stacks: object[], envFiles: object[]}>}
  */
 export async function inspect(requested) {
   const dir = resolveDirectory(requested);
   const names = await readdir(dir).catch(unreadable(dir));
   const pkg = names.includes('package.json') ? await readPackage(dir) : null;
   const manager = packageManagerOf(pkg, names);
+  const [stacks, envFiles] = await Promise.all([
+    detectStacks(dir, names, pkg, manager),
+    Promise.all(envFileNames(names).map((name) => readEnvFile(dir, name))),
+  ]);
   return {
     path: dir,
     packageName: pkg?.name ?? null,
     packageManager: manager,
     scripts: pkg ? scriptSuggestions(pkg.scripts, manager) : [],
-    envFiles: await Promise.all(envFileNames(names).map((name) => readEnvFile(dir, name))),
+    stacks,
+    envFiles,
   };
 }

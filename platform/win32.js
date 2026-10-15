@@ -7,12 +7,19 @@
  */
 import { execFile, spawnSync } from 'child_process';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
 
 const run = promisify(execFile);
 
 export const platformName = 'win32';
+
+/** Windows' available-physical figure already counts the standby list as free. */
+export async function memoryUsage() {
+  const total = os.totalmem();
+  return { total, used: total - os.freemem() };
+}
 
 /** These are local queries; the bound exists so a hung console host cannot stall a stop. */
 const PROBE_TIMEOUT_MS = 5_000;
@@ -36,6 +43,18 @@ export const shellInvocation = (command) => ({
   file: process.env.ComSpec || 'cmd.exe',
   args: ['/d', '/s', '/c', command],
 });
+
+/** Relative to the project, which is the directory a suggested command runs in. */
+export const venvPython = (venv) => `${venv}\\Scripts\\python.exe`;
+
+/** The python.org installer and the Store both put `python` on PATH; `python3` is the Store's stub. */
+export const pythonCommand = 'python';
+
+/**
+ * `cmd` searches the working directory before PATH and completes the name from PATHEXT, which is
+ * what finds `gradlew.bat` and `mvnw.cmd` beside the POSIX scripts of the same name.
+ */
+export const localCommand = (name) => name;
 
 /** No process groups to create; the only thing worth suppressing is a console window flash. */
 export const spawnOptions = () => ({ windowsHide: true });
@@ -225,6 +244,34 @@ export async function listListeningPorts() {
   }
   const degraded = listeners.length === 0 && !stdout.trim() ? ['netstat returned nothing'] : [];
   return { listeners, degraded };
+}
+
+/**
+ * Every established TCP connection, one row per socket end, from the same `netstat -ano` table the
+ * listener scan reads.
+ * @returns {Promise<{connections: object[]}>}
+ */
+export async function listConnections() {
+  const stdout = await readCommand(system32('netstat.exe'), ['-ano']);
+  const connections = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const tokens = line.trim().split(/\s+/);
+    if (tokens.length !== 5) continue;
+    const [proto, localPart, remotePart, state, pid] = tokens;
+    if (proto.toUpperCase() !== 'TCP' || state.toUpperCase() !== 'ESTABLISHED') continue;
+    if (!/^\d+$/.test(pid)) continue;
+    const local = splitHostPort(localPart);
+    const remote = splitHostPort(remotePart);
+    if (!local || !remote) continue;
+    connections.push({
+      pid: Number(pid),
+      localAddress: local.address,
+      localPort: local.port,
+      remoteAddress: remote.address,
+      remotePort: remote.port,
+    });
+  }
+  return { connections };
 }
 
 /**

@@ -5,8 +5,10 @@
  * connected and attribute each tool call to it. A request naming a session that is gone — closed
  * idle, or from before a restart — is answered 404, which tells the client to initialize again.
  * Every tool goes through service.js, so the agent and the UI can never see different shapes, and
- * every lifecycle input is an id — defining processes stays with the human in the dashboard. The
- * database tools are the one place an agent sends free text: SQL, against a PostgreSQL application.
+ * configuration changes go through the same validated service boundary as the dashboard. Creation
+ * is intentionally narrow: agents may create process-based applications and add processes to them,
+ * but cannot create PostgreSQL applications or edit/delete existing configuration. The database
+ * tools are the other place an agent sends free text: SQL, against a PostgreSQL application.
  */
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -17,7 +19,7 @@ import { z } from 'zod';
 import { HOST, PORT, ROOT_DIR } from '../config.js';
 import { json as sendJson, databaseErrorFields, errorMessage } from './respond.js';
 import {
-  listApplications, getApplication, readLogs,
+  listApplications, getApplication, createApplication, addProcess, readLogs,
   startApplication, stopApplication, restartApplication,
   startProcess, stopProcess, restartProcess,
   listPorts, getPort, stopPort,
@@ -48,9 +50,10 @@ const INSTRUCTIONS =
   'applications or something else on the machine, and stop_port frees it by port rather than by ' +
   'pid. For a PostgreSQL application, start it, then list_databases, list_tables / describe_table ' +
   'to learn the shape, then query (reads) or execute (writes and DDL). Every database tool takes ' +
-  'the application_id and an explicit database — there is no session state between calls. There ' +
-  'is deliberately no tool to create, edit or delete an application or a process: you operate what ' +
-  'the developer registered, and anything new has to be added by them in the dashboard.';
+  'the application_id and an explicit database — there is no session state between calls. Use ' +
+  'create_application to create a process-based application and add_process to register each local ' +
+  'service in it. These creation tools accept repository paths and shell commands, but there are ' +
+  'deliberately no tools to create PostgreSQL applications or to edit or delete existing configuration.';
 
 /** An IPv6 literal is bracketed in a Host header, so a configured `::1` is compared that way. */
 const hostAuthority = (host) => (host.includes(':') && !host.startsWith('[') ? `[${host}]` : host);
@@ -105,6 +108,59 @@ const application_id = z.string()
   .describe('Application id from list_applications, e.g. app_7c1f9be24d05');
 const process_id = z.string()
   .describe('Process id from get_application — the id, never the name');
+
+function registerCreationTools(server) {
+  server.registerTool(
+    'create_application',
+    {
+      title: 'Create application',
+      description:
+        'Create an empty process-based application and return its ApplicationView, including the ' +
+        'new application id needed by add_process. This cannot create a PostgreSQL application. ' +
+        'Application names are unique case-insensitively.',
+      inputSchema: {
+        name: z.string().describe('Application name'),
+        description: z.string().optional().describe('Optional human-readable description'),
+        auto_start: z.boolean().optional()
+          .describe('Start this application when Paddock starts (default false)'),
+      },
+    },
+    guard(({ name, description, auto_start }) =>
+      createApplication({ name, description, autoStart: auto_start, kind: 'processes' }))
+  );
+
+  server.registerTool(
+    'add_process',
+    {
+      title: 'Add service',
+      description:
+        'Add a local service process to a process-based application and return the updated ' +
+        'ApplicationView. The repository path must be an existing absolute directory. The command ' +
+        'runs through the system shell when the process is started. The working directory, when ' +
+        'provided, must be inside the repository path.',
+      inputSchema: {
+        application_id,
+        name: z.string().describe('Service/process name, unique within the application'),
+        repository_path: z.string().describe('Existing absolute path to the service repository'),
+        command: z.string().describe('Shell command used to start the service'),
+        working_directory: z.string().optional()
+          .describe('Absolute directory inside the repository (default: repository_path)'),
+        env: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional()
+          .describe('Environment variables added to the inherited process environment'),
+        enabled: z.boolean().optional()
+          .describe('Include this service when starting the application (default true)'),
+      },
+    },
+    guard((args) => addProcess(args.application_id, {
+      name: args.name,
+      repositoryPath: args.repository_path,
+      command: args.command,
+      workingDirectory: args.working_directory,
+      env: args.env,
+      enabled: args.enabled,
+    }))
+  );
+}
 
 function registerInspectionTools(server) {
   server.registerTool(
@@ -527,6 +583,7 @@ const auditing = (server) => ({
 function createMcpServer() {
   const server = new McpServer(SERVER_INFO, { instructions: INSTRUCTIONS });
   const audited = auditing(server);
+  registerCreationTools(audited);
   registerInspectionTools(audited);
   registerApplicationTools(audited);
   registerProcessTools(audited);

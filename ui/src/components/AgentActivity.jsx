@@ -166,7 +166,7 @@ export default function AgentActivity({ live }) {
         {sessionsError && <p className="notice danger">{sessionsError}</p>}
         {!sessions && !sessionsError && <p className="empty-inline" role="status">Loading…</p>}
         {sessions?.length === 0 && (
-          <p className="empty-inline">No agent is connected. Add the URL above to Claude Code, Cursor or any MCP client.</p>
+          <p className="empty-inline">No agent is connected. Add Paddock to Cursor or Claude Code above, or give its URL to any MCP client.</p>
         )}
         {known.map((session) => (
           <SessionRow

@@ -45,6 +45,25 @@ export function closeDashboard() {
   dashboard?.destroy();
 }
 
+/**
+ * Full screen hides the traffic lights, so the inset that clears them has to go with them.
+ * @param {Electron.BrowserWindow} window
+ */
+function bindTrafficLights(window) {
+  const set = (shown) => {
+    window.webContents
+      .executeJavaScript(
+        `document.documentElement.classList.${shown ? 'add' : 'remove'}('desktop-mac')`
+      )
+      .catch(() => {});
+  };
+  window.on('enter-full-screen', () => set(false));
+  window.on('leave-full-screen', () => set(true));
+  window.webContents.on('dom-ready', () => {
+    if (window.isFullScreen()) set(false);
+  });
+}
+
 /** @param {string} url */
 function createDashboard(url) {
   const window = new BrowserWindow({
@@ -58,8 +77,16 @@ function createDashboard(url) {
     icon: APP_ICON,
     autoHideMenuBar: true,
     backgroundColor: pageBackground(),
+    // macOS: no separate title bar. The traffic lights sit in the sidebar, and the page shows
+    // through where "Paddock — local dev manager" used to be drawn.
+    ...(process.platform === 'darwin' && {
+      titleBarStyle: 'hiddenInset',
+      // Inside the floating sidebar, 14px from its top-left corner (the panel is inset 8px).
+      trafficLightPosition: { x: 22, y: 22 },
+    }),
     webPreferences: { sandbox: true, contextIsolation: true, preload: PRELOAD },
   });
+  if (process.platform === 'darwin') bindTrafficLights(window);
   keepOtherPagesOut(window, new URL(url).origin);
   window.once('ready-to-show', () => window.show());
   window.loadURL(url);

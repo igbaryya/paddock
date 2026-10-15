@@ -8,7 +8,8 @@
  * to stop its process groups before the app exits.
  */
 import path from 'node:path';
-import { app, clipboard, dialog } from 'electron';
+import { app, clipboard, dialog, session } from 'electron';
+import { startDevUi } from './dev-ui.js';
 import { exposeToDashboard } from './bridge.js';
 import { handleServerRequest, openedAtLogin } from './login-item.js';
 import { SERVER_DIR, importServerModule } from './server-dir.js';
@@ -55,6 +56,8 @@ const serverEnv = () => ({
   ...process.env,
   PADDOCK_DESKTOP_APP: app.getPath('exe'),
   ...(openedAtLogin() && { PADDOCK_LOGIN_ITEM: '1' }),
+  // A checkout has no built dashboard. The window loads Vite, and this port stays an API.
+  ...(!app.isPackaged && { PADDOCK_SERVE_UI: '0' }),
 });
 
 /**
@@ -193,6 +196,30 @@ async function checkForUpdatesAndSay() {
   dialog.showMessageBox({ type: 'info', title: 'Paddock', ...describeCheck(state) });
 }
 
+/**
+ * The checkout window. Vite serves the UI from source, and only this window's requests are let
+ * through. Returns null when the dev server did not come up — `fail` has already quit.
+ * @returns {Promise<string|null>}
+ */
+async function devDashboardUrl() {
+  const devUi = await startDevUi().catch((err) => {
+    fail('Paddock could not open its window.', err.message);
+    return null;
+  });
+  if (!devUi) return null;
+  const origin = new URL(devUi.url).origin;
+  const sockets = origin.replace(/^http:/, 'ws:');
+  session.defaultSession.webRequest.onBeforeSendHeaders(
+    { urls: [`${origin}/*`, `${sockets}/*`] },
+    (details, callback) => {
+      details.requestHeaders['X-Paddock-Desktop'] = devUi.token;
+      callback({ requestHeaders: details.requestHeaders });
+    }
+  );
+  app.on('before-quit', () => devUi.stop());
+  return devUi.url;
+}
+
 async function main() {
   // Chromium's profile would otherwise land in "Paddock", which on the case-insensitive file systems
   // of macOS and Windows is the server's own data directory. First, because the lock below lives there.
@@ -211,7 +238,9 @@ async function main() {
 
   const server = await resolveServer(config);
   if (!server) return;
-  const open = () => showDashboard(server.url);
+  const pageUrl = app.isPackaged ? server.url : await devDashboardUrl();
+  if (!pageUrl) return;
+  const open = () => showDashboard(pageUrl);
   app.on('second-instance', open);
   app.on('activate', open);
   const installUpdateNow = () => installUpdateAfterStopping(server);
@@ -225,7 +254,7 @@ async function main() {
     onCheckForUpdates: checkForUpdatesAndSay,
   });
   onUpdateState((state) => tray.showUpdateState(state));
-  exposeToDashboard({ origin: new URL(server.url).origin, installUpdate: installUpdateNow });
+  exposeToDashboard({ origin: new URL(pageUrl).origin, installUpdate: installUpdateNow });
   watchForUpdates();
   // A splash, if the server start put one up, stays until the dashboard has painted in its place.
   if (!openedAtLogin()) open().then(closeSplash);

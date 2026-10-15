@@ -140,6 +140,9 @@ export const MCP_AUDIT_FILE = path.join(DATA_DIR, 'mcp-calls.jsonl');
 /** Favicons found on running services — a cache, rebuilt by the next start, and safe to delete by hand. */
 export const FAVICON_DIR = path.join(DATA_DIR, 'favicons');
 
+/** Which process was seen connecting to which port — a cache relearned while services run, and safe to delete by hand. */
+export const LINKS_FILE = path.join(DATA_DIR, 'links.json');
+
 export const LOG_BUFFER_LINES = intFromEnv('PADDOCK_LOG_BUFFER_LINES', 2_000);
 
 export const LOG_FILE_MAX_BYTES = intFromEnv('PADDOCK_LOG_FILE_MAX_BYTES', 5_242_880);
@@ -167,6 +170,9 @@ export const PORT_SCAN_TTL_MS = intFromEnv('PADDOCK_PORT_SCAN_TTL_MS', 3_000, { 
 
 /** How often connected dashboards are pushed a fresh port list; 0 disables background scanning. */
 export const PORT_SCAN_INTERVAL_MS = intFromEnv('PADDOCK_PORT_SCAN_INTERVAL_MS', 5_000, { min: 0 });
+
+/** How often connected dashboards are pushed CPU, memory and disk usage; 0 turns the meters off. */
+export const SYSTEM_STATS_INTERVAL_MS = intFromEnv('PADDOCK_SYSTEM_STATS_INTERVAL_MS', 2_000, { min: 0 });
 
 /** Grace an unmanaged process gets between the polite signal and the forced one. */
 export const PORT_STOP_GRACE_MS = intFromEnv('PADDOCK_PORT_STOP_GRACE_MS', 5_000);
@@ -204,3 +210,10 @@ export const PG_CONNECT_TIMEOUT_MS = intFromEnv('PADDOCK_PG_CONNECT_TIMEOUT_MS',
 
 /** Built UI. Absent until `npm run build` in ui/ — http/static.js says so rather than failing. */
 export const UI_DIR = path.join(ROOT_DIR, 'ui', 'dist');
+
+/**
+ * Whether this process serves the dashboard HTML. On for `node server.js`, so a built `ui/dist`
+ * is the website on this port. The desktop app from a checkout turns it off: the window loads the
+ * UI from Vite, and a browser opened here gets the API only.
+ */
+export const SERVE_UI = boolFromEnv('PADDOCK_SERVE_UI', true);

@@ -42,14 +42,18 @@ intelligence.
 ## Quick start
 
 ```bash
-npm install          # server dependencies
-npm run setup        # UI dependencies
-npm run build        # build the dashboard
-npm start            # http://127.0.0.1:4599
+npm install            # server dependencies
+npm run setup          # UI dependencies, once
+npm run desktop:setup  # the desktop app, once
+npm start              # opens the Paddock window
 ```
 
-No `.env` required — every setting has a default. For UI work with hot reload, `npm run dev` runs the
-server and Vite together and tears both down on Ctrl-C.
+No `.env` required — every setting has a default. `npm start` opens the desktop window and does not
+build `ui/dist`. The window loads the UI from Vite. The API stays on `http://127.0.0.1:4599` and does
+not serve the dashboard, so opening that address in a browser does not open the app.
+
+`npm run server` is the API on its own, and serves a built dashboard when `ui/dist` exists.
+`npm run dev` is the API plus Vite in a browser, for UI work that is not in the window.
 
 To stop starting it by hand, turn on **Settings → Start at login**. It writes a per-user login entry —
 a LaunchAgent on macOS, a `Run` key with a hidden launcher on Windows, an XDG autostart entry on Linux
@@ -222,6 +226,24 @@ working directory if you set one, the repository root otherwise — the form off
 scripts fill the Command field, loading a `.env` adds the variables it does not already have and
 leaves the ones you have overridden exactly as you typed them.
 
+A directory with no `package.json` script to offer still gets a command. The form names the stack
+it is built on — read from its manifests, lockfiles and wrapper scripts, never by running anything —
+and offers the command that usually starts it:
+
+| Stack | Recognised by | Offered |
+| --- | --- | --- |
+| Node.js / TypeScript | `package.json` dependencies, or a `server`/`index`/`main`/`app` entry file | the framework's dev server (Next.js, Vite, Nuxt, Astro, Angular, NestJS, CRA, …) through the project's package manager, else `node --watch` / `tsx watch` on the entry |
+| Python | `pyproject.toml`, `requirements*.txt`, `Pipfile`, `manage.py`, … | Django's `runserver`, uvicorn on the FastAPI / Starlette / Litestar / Quart app object it finds, `flask run`, Streamlit, console scripts — run through uv, Poetry, PDM, Pipenv or a local `.venv` when there is one |
+| Deno | `deno.json(c)` | its tasks |
+| Go, Rust | `go.mod`, `Cargo.toml` | `go run` for each `cmd/*` main package, `air`; `cargo run` per binary |
+| Java / Kotlin | `pom.xml`, `build.gradle(.kts)` | Spring Boot, Quarkus or Micronaut through `mvnw` / `gradlew` |
+| Ruby, PHP, .NET, Elixir | `Gemfile`, `composer.json` / `artisan`, `*.csproj`, `mix.exs` | `rails server`, `rackup`, `php artisan serve`, `php -S`, `dotnet watch run`, `mix phx.server` |
+| Declared runners | `Procfile`, `Makefile`, `justfile`, `Taskfile.yml`, `compose.yaml` | each Procfile process, `make dev`-style targets, `docker compose up` |
+
+Hovering a suggestion says why it was offered, and the form notes when a project's dependencies or
+virtual environment are missing, since a command that cannot import its framework is the commonest
+first failure.
+
 ### Terminal
 
 Each application page has an **Open terminal** control beside Start / Stop / Restart. It opens a
@@ -327,6 +349,17 @@ The MCP endpoint is Streamable HTTP at `/mcp` on its own port, **4600** by defau
 dashboard's 4599. A fresh install brings it up by itself; if 4600 is taken it picks a free port and
 keeps it. The MCP page in the dashboard shows the exact URL, and lets you change the port.
 
+The quickest way in is **Settings → MCP → Connect an agent**. It finds Cursor and Claude Code on
+this machine, suggests the installed one that does not reach Paddock yet (the most recently used, if
+both are there), and one click writes a `paddock` server into that agent's user-wide settings:
+`~/.cursor/mcp.json` for Cursor, the top-level `mcpServers` of `~/.claude.json` for Claude Code.
+Nothing else in the file changes, and a file that is not valid JSON is reported rather than
+rewritten. After the MCP port changes, the entry shows as out of date with an **Update** button.
+The agent connects the next time it loads its MCP servers. Like Start at login, this is a dashboard
+action, not an MCP tool.
+
+By hand instead:
+
 ```bash
 claude mcp add --transport http paddock http://127.0.0.1:4600/mcp
 ```
@@ -358,6 +391,8 @@ A session idle for an hour is closed; the client is answered 404 and opens a new
 
 | | Tool | What it does |
 | --- | --- | --- |
+| ➕ | `create_application` | Create an empty process-based application |
+| ➕ | `add_process` | Add a local service, repository path and start command to an application |
 | 📋 | `list_applications` | Every application with its rolled-up status and process counts |
 | 🔍 | `get_application` | One application: processes, pids, paths, commands, uptime, ports |
 | ▶️ | `start_application` | Start every enabled process, in order, with a per-process result |
@@ -398,9 +433,11 @@ truncating to `max_rows` — put a `LIMIT` in the SQL. `drop_database` refuses `
 `template1` and the application's maintenance database. A PostgreSQL error comes back with its
 `code`, `detail`, `hint` and `position`, which is what an agent needs to fix its SQL.
 
-**The lifecycle tools cannot run arbitrary commands.** They take ids and port numbers only. There is
-no tool that creates, edits or deletes a process, and none that accepts a path or a shell string. An
-agent operates what you registered and can free a port; it cannot invent something to run.
+**The lifecycle tools cannot run arbitrary commands directly.** They take ids and port numbers only.
+The creation tools are a privileged exception: `create_application` creates process-based
+applications, and `add_process` persists an existing absolute repository path and a shell command
+that can later be run with `start_process` or `start_application`. There are no MCP tools to create
+PostgreSQL applications or to edit or delete existing application and process configuration.
 
 **The SQL tools are the exception, and it is a real one.** `execute` runs whatever it is sent as the
 configured role. When that role is a superuser — which the role `initdb` creates is — PostgreSQL's
@@ -529,6 +566,7 @@ full buffer does not lay out every row on every incoming batch.
 | `PADDOCK_REAP_ORPHANS` | `true` |
 | `PADDOCK_PORT_SCAN_TTL_MS` | `3000` |
 | `PADDOCK_PORT_SCAN_INTERVAL_MS` | `5000` (0 disables background scanning) |
+| `PADDOCK_SYSTEM_STATS_INTERVAL_MS` | `2000` — CPU/memory/disk meters in the sidebar (0 turns them off) |
 | `PADDOCK_PORT_STOP_GRACE_MS` | `5000` |
 | `PADDOCK_PG_STATEMENT_TIMEOUT_MS` | `15000` — per statement from a database tool |
 | `PADDOCK_PG_CONNECT_TIMEOUT_MS` | `5000` |
@@ -549,8 +587,10 @@ privileged capability, and the boundaries are deliberate:
 
 - Binds loopback, and rejects any request whose `Host` or `Origin` is not a loopback origin, plus any
   connection not from a loopback address. A web page you visit cannot drive your process manager.
-- MCP lifecycle tools take ids and port numbers only — no shell, no paths, no configuration changes.
-  The audit of what agents ran is dashboard-only: no MCP tool can read or clear it.
+- MCP lifecycle tools take ids and port numbers only. The separate creation tools may persist a
+  repository path and shell command for a new service, using the same path containment and input
+  validation as the dashboard; they cannot edit or delete configuration or create PostgreSQL
+  applications. The audit of what agents ran is dashboard-only: no MCP tool can read or clear it.
   The SQL tools take SQL, and through a superuser role that reaches the shell (`COPY … TO PROGRAM`);
   the role an application connects as is the boundary there. The dashboard's SQL console is the same
   capability behind the same loopback and origin guard as the rest of `/api`, and a write from it has
@@ -639,6 +679,7 @@ from a terminal, and discovery. Without them those tests are skipped.
 - [mcp-sessions.js](mcp-sessions.js), [mcp-audit.js](mcp-audit.js) — connected agents and every tool call they made
 - [ports.js](ports.js) — port scan cache, owner correlation, safe termination
 - [workspace.js](workspace.js) — read-only project inspection: directory browsing, scripts, `.env`
+- [stacks.js](stacks.js) — what a project is built on, and the commands that usually start it
 - [favicons.js](favicons.js) — favicon discovery on running services, and its on-disk cache
 - [login-item.js](login-item.js) — start at login: what the entry runs, and whether it has gone stale
 - [service.js](service.js) — the facade the UI and MCP both call, and the view models

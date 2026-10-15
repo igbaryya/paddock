@@ -8,6 +8,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('paddockDesktop', {
+  /** The OS the window runs on. index.html reads it before the first paint to clear the traffic lights. */
+  platform: process.platform,
   /** @returns {Promise<string>} the app's version, which is the server's */
   getVersion: () => ipcRenderer.invoke('paddock:version'),
   /** @returns {Promise<object>} what the updater is doing right now */

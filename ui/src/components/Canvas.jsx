@@ -76,14 +76,14 @@ function readMetrics(element) {
 /**
  * @param {{nodes: {id: string, x: number, y: number, render: (state: {selected: boolean}) =>
  *            import('react').ReactNode}[],
- *          edges?: {from: string, to: string}[], selectedId?: string|null,
+ *          edges?: {from: string, to: string, arrow?: boolean}[], selectedId?: string|null,
  *          onSelect?: (id: string|null) => void,
  *          onMove?: (id: string, position: {x: number, y: number}) => void,
- *          label: string}} props
+ *          onArrange?: () => void, label: string}} props
  *   `onMove` is called once, on the drop — not for every frame of the drag, which is what would
- *   turn one gesture into a request per pixel.
+ *   turn one gesture into a request per pixel. `onArrange`, when given, is offered as a control.
  */
-export default function Canvas({ nodes, edges = [], selectedId = null, onSelect, onMove, label }) {
+export default function Canvas({ nodes, edges = [], selectedId = null, onSelect, onMove, onArrange, label }) {
   const viewportRef = useRef(null);
   const [view, setView] = useState({ x: 0, y: 0, scale: 1 });
   /** The card being dragged and where the pointer has it, so only the drop commits anything. */
@@ -183,6 +183,9 @@ export default function Canvas({ nodes, edges = [], selectedId = null, onSelect,
     // A slot whose node has just gone is a render caught mid-flight: taking the pointer here would
     // strand the capture on a gesture that can never be completed.
     if (slot && !node) return;
+    // A drag is a move. Without this the browser starts a text selection on the card under the
+    // pointer, and the highlight follows the box across the canvas.
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
 
     if (node) {
@@ -285,7 +288,26 @@ export default function Canvas({ nodes, edges = [], selectedId = null, onSelect,
           {/* Under the cards and out of the pointer's way. It overflows its own box on purpose: the
               box is a point at the world's origin, and the curves are drawn in world coordinates. */}
           <svg className="canvas-edges" aria-hidden="true">
-            {edges.map(({ from, to }) => {
+            {/* One marker per colour: an SVG marker cannot inherit the stroke of the path using it. */}
+            <defs>
+              {['', 'live'].map((state) => (
+                <marker
+                  key={state || 'idle'}
+                  id={`canvas-arrow${state ? `-${state}` : ''}`}
+                  className={`canvas-arrow${state ? ` ${state}` : ''}`}
+                  viewBox="0 0 10 10"
+                  refX="10"
+                  refY="5"
+                  markerWidth="8"
+                  markerHeight="8"
+                  markerUnits="userSpaceOnUse"
+                  orient="auto"
+                >
+                  <path d="M 0 0 L 10 5 L 0 10 z" />
+                </marker>
+              ))}
+            </defs>
+            {edges.map(({ from, to, arrow }) => {
               const a = placed.get(from);
               const b = placed.get(to);
               if (!a || !b) return null;
@@ -293,8 +315,9 @@ export default function Canvas({ nodes, edges = [], selectedId = null, onSelect,
               return (
                 <path
                   key={`${from}->${to}`}
-                  className={`canvas-edge${live ? ' live' : ''}`}
+                  className={`canvas-edge${arrow ? ' call' : ''}${live ? ' live' : ''}`}
                   d={edgePath(a, b, metrics.nodeWidth)}
+                  markerEnd={arrow ? `url(#canvas-arrow${live ? '-live' : ''})` : undefined}
                   // Zoom must not thicken the curves, or a zoomed-in canvas turns into ribbons.
                   vectorEffect="non-scaling-stroke"
                 />
@@ -338,6 +361,12 @@ export default function Canvas({ nodes, edges = [], selectedId = null, onSelect,
           <Icon name="fit" />
           Fit
         </button>
+        {onArrange && (
+          <button type="button" className="btn small" onClick={onArrange} title="Forget where cards were moved and lay them out again">
+            <Icon name="grid" />
+            Arrange
+          </button>
+        )}
       </div>
     </div>
   );

@@ -6,7 +6,8 @@
  *
  * Three of the fields can fill themselves in, all from one question: what is in the directory the
  * command will run in. The paths have a browser, the command is offered the package.json scripts
- * found there, and the environment is offered the .env files sitting next to them. Every one of
+ * found there and the start commands of whatever stack the directory is built on, and the
+ * environment is offered the .env files sitting next to them. Every one of
  * those is a suggestion the user then edits — nothing is written into the form without a click.
  */
 import { useState } from 'react';
@@ -202,28 +203,75 @@ function EnvRows({ rows, onChange, error, children }) {
 function ScriptSuggestions({ loading, inspection, onPick }) {
   if (loading) return <p className="hint">Reading the directory…</p>;
   if (!inspection) return null;
-  if (!inspection.scripts.length) {
-    return <p className="hint">No package.json scripts in this directory.</p>;
+  const stacks = inspection.stacks ?? [];
+  if (!inspection.scripts.length && !stacks.length) {
+    return <p className="hint">Nothing in this directory says how it starts.</p>;
   }
 
   return (
+    <>
+      {inspection.scripts.length > 0 && (
+        <div className="suggestions">
+          <p className="hint">
+            {inspection.packageName ?? 'package.json'} — {inspection.packageManager}
+          </p>
+          <div className="chips">
+            {inspection.scripts.map((script) => (
+              <button
+                key={script.name}
+                type="button"
+                className="chip mono"
+                title={script.script}
+                onClick={() => onPick(script.command)}
+              >
+                {script.command}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <StackSuggestions stacks={stacks} onPick={onPick} />
+    </>
+  );
+}
+
+const stackName = (stack) => [stack.label, ...stack.details].join(' · ');
+
+/**
+ * What the directory is built on, and the commands that usually start it — inferred from its
+ * manifests rather than declared by its author, so each one says why it is offered on hover.
+ * @param {{stacks: object[], onPick: (command: string) => void}} props
+ */
+function StackSuggestions({ stacks, onPick }) {
+  if (!stacks.length) return null;
+  const suggestions = stacks.flatMap((stack) => stack.suggestions);
+  const notes = stacks.flatMap((stack) => stack.notes);
+
+  return (
     <div className="suggestions">
-      <p className="hint">
-        {inspection.packageName ?? 'package.json'} — {inspection.packageManager}
+      <p className="hint" title={stacks.flatMap((stack) => stack.evidence).join(', ')}>
+        Detected: {stacks.map(stackName).join(', ')}
       </p>
-      <div className="chips">
-        {inspection.scripts.map((script) => (
-          <button
-            key={script.name}
-            type="button"
-            className="chip mono"
-            title={script.script}
-            onClick={() => onPick(script.command)}
-          >
-            {script.command}
-          </button>
-        ))}
-      </div>
+      {suggestions.length > 0 && (
+        <div className="chips">
+          {suggestions.map((suggestion) => (
+            <button
+              key={suggestion.command}
+              type="button"
+              className="chip mono"
+              title={suggestion.reason}
+              onClick={() => onPick(suggestion.command)}
+            >
+              {suggestion.command}
+            </button>
+          ))}
+        </div>
+      )}
+      {notes.map((note) => (
+        <p className="hint" key={note}>
+          {note}
+        </p>
+      ))}
     </div>
   );
 }

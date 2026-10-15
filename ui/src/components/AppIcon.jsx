@@ -5,8 +5,10 @@
  * group of processes — so two icon-less applications still look different at a glance.
  *
  * Favicons and logos are drawn for a background of their own choosing; the neutral tile behind each
- * one is what keeps a dark mark legible on the dark theme.
+ * one is what keeps a dark mark legible on the dark theme. A mark that is itself near-white is
+ * redrawn in ink on the light theme, or it would sit white on white.
  */
+import Glyph from './Glyph.jsx';
 
 /**
  * The favicons of the application's processes, one per distinct image: a web app and its admin
@@ -26,7 +28,7 @@ function iconsOf(application, favicons) {
 
 /** @param {{application: object}} props */
 function Placeholder({ application }) {
-  if (application.kind === 'postgres') return <img src="/postgres.svg" alt="" />;
+  if (application.kind === 'postgres') return <Glyph src="/postgres.svg" />;
   return application.name.trim().charAt(0).toUpperCase();
 }
 
@@ -41,13 +43,13 @@ export default function AppIcon({ application, favicons, size = 'lg' }) {
   return (
     <span className={`app-icon app-icon-${size}`} aria-hidden="true">
       {primary ? (
-        <img src={primary.dataUrl} alt="" title={primary.names.join(', ')} />
+        <Glyph src={primary.dataUrl} title={primary.names.join(', ')} />
       ) : (
         <Placeholder application={application} />
       )}
       {secondary && (
         <span className="app-icon-badge">
-          <img src={secondary.dataUrl} alt="" title={secondary.names.join(', ')} />
+          <Glyph src={secondary.dataUrl} title={secondary.names.join(', ')} />
         </span>
       )}
     </span>

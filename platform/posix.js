@@ -8,6 +8,7 @@
 import { execFile } from 'child_process';
 import { existsSync } from 'fs';
 import fs from 'fs/promises';
+import os from 'os';
 import path from 'path';
 import { promisify } from 'util';
 
@@ -61,6 +62,7 @@ const SCAN_MAX_BUFFER = 8 * 1024 * 1024;
 const LSOF = '/usr/sbin/lsof';
 const NETSTAT = '/usr/sbin/netstat';
 const PS = '/bin/ps';
+const VM_STAT = '/usr/bin/vm_stat';
 
 /**
  * Exit status 1 means "nothing matched" *and* "not permitted" for every tool here, so a non-zero
@@ -186,6 +188,50 @@ export async function listListeningPorts() {
 }
 
 /**
+ * Both ends of an lsof connection name, `127.0.0.1:62666->127.0.0.1:4600`. lsof brackets IPv6
+ * literals, which is what keeps the `->` split and the last-colon split from colliding.
+ * @param {string} stdout `-F0` output: NUL-separated fields, one record per line
+ */
+function parseLsofConnections(stdout) {
+  const connections = [];
+  let pid = null;
+  for (const line of stdout.split('\n')) {
+    if (!line) continue;
+    const fields = {};
+    for (const token of line.split('\0')) if (token) fields[token[0]] = token.slice(1);
+    if (fields.p !== undefined) {
+      pid = Number(fields.p);
+      continue;
+    }
+    if (!Number.isInteger(pid) || fields.n === undefined) continue;
+    const [localPart, remotePart] = fields.n.split('->');
+    if (!remotePart) continue;
+    const local = splitHostPort(localPart, ':');
+    const remote = splitHostPort(remotePart, ':');
+    if (!local || !remote) continue;
+    connections.push({
+      pid,
+      localAddress: local.address,
+      localPort: local.port,
+      remoteAddress: remote.address,
+      remotePort: remote.port,
+    });
+  }
+  return connections;
+}
+
+/**
+ * Every established TCP connection this user owns, one row per socket end. lsof alone is enough:
+ * its blind spot is other users' sockets, and the callers worth finding are processes this manager
+ * spawned, which are always ours.
+ * @returns {Promise<{connections: object[]}>}
+ */
+export async function listConnections() {
+  const stdout = await readCommand(LSOF, ['-b', '-w', '-n', '-P', '-iTCP', '-sTCP:ESTABLISHED', '-F0pn']);
+  return { connections: parseLsofConnections(stdout) };
+}
+
+/**
  * One `ps` snapshot for every process, rather than a call per pid: repeated calls cost more beyond a
  * handful of pids and, worse, give a torn view — a parent can exit mid-scan and leave a walk
  * following a pid that has already been reparented.
@@ -243,6 +289,43 @@ export async function processPaths(pid) {
     else if (line.startsWith('n/') && fd === '2') paths.stderrPath ??= line.slice(1);
   }
   return paths;
+}
+
+/**
+ * Bytes in use the way Activity Monitor counts "Memory Used": app memory (anonymous pages less the
+ * purgeable ones), plus wired, plus what the compressor occupies. File cache is left out because
+ * the kernel hands it back the moment anything asks. Null when a field it needs is missing.
+ * @param {string} stdout `vm_stat` output
+ * @returns {number|null}
+ */
+export function parseVmStat(stdout) {
+  const pageSize = Number(/page size of (\d+) bytes/.exec(stdout)?.[1]);
+  const pages = {};
+  for (const line of stdout.split('\n')) {
+    const row = /^"?([^":]+)"?:\s+(\d+)\.?$/.exec(line.trim());
+    if (row) pages[row[1]] = Number(row[2]);
+  }
+  const anonymous = pages['Anonymous pages'];
+  const wired = pages['Pages wired down'];
+  const compressed = pages['Pages occupied by compressor'];
+  if (!pageSize || [anonymous, wired, compressed].some((n) => n === undefined)) return null;
+  const purgeable = pages['Pages purgeable'] ?? 0;
+  return (Math.max(0, anonymous - purgeable) + wired + compressed) * pageSize;
+}
+
+/**
+ * macOS's free count leaves out inactive and cached pages, so `os.freemem()` there reads as a machine
+ * that is always out of memory; `vm_stat` is what tells used from merely cached. Linux's figure is
+ * already MemAvailable, so the os module answers it directly.
+ * @returns {Promise<{total: number, used: number}>}
+ */
+export async function memoryUsage() {
+  const total = os.totalmem();
+  if (process.platform === 'darwin') {
+    const used = parseVmStat(await readCommand(VM_STAT, []));
+    if (used !== null) return { total, used: Math.min(used, total) };
+  }
+  return { total, used: total - os.freemem() };
 }
 
 /**
@@ -556,6 +639,15 @@ export async function removeLoginItem(spec) {
  * @param {string} command
  */
 export const shellInvocation = (command) => ({ file: '/bin/sh', args: ['-c', command] });
+
+/** Relative to the project, which is the directory a suggested command runs in. */
+export const venvPython = (venv) => `${venv}/bin/python`;
+
+/** macOS and most Linux distributions ship no bare `python`, and some ship one that is Python 2. */
+export const pythonCommand = 'python3';
+
+/** `sh` looks a bare name up on PATH only, so a wrapper in the working directory needs its `./`. */
+export const localCommand = (name) => `./${name}`;
 
 /**
  * The shell a person gets in a terminal, as opposed to the one a configured command runs under.

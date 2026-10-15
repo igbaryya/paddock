@@ -265,6 +265,88 @@ describe('listener merging', () => {
   });
 });
 
+describe('links', () => {
+  // frontend (pid 100, :5173) calls api (pid 200, :3001); redis-server (pid 300, :6379) is not managed.
+  const frontend = managed({ processId: 'proc_fe', processName: 'frontend', pid: 100 });
+  const api = managed({ processId: 'proc_api', processName: 'api', pid: 200 });
+  const processes = [proc({ pid: 100 }), proc({ pid: 200, pgid: 200 }), proc({ pid: 300, pgid: 300, name: 'redis-server' })];
+  const listeners = [
+    listener({ pid: 100, port: 5173 }),
+    listener({ pid: 200, port: 3001, address: '0.0.0.0' }),
+    listener({ pid: 300, port: 6379, name: 'redis-server' }),
+  ];
+  const connection = (pid, localPort, remotePort, over = {}) => ({
+    pid,
+    localAddress: '127.0.0.1',
+    localPort,
+    remoteAddress: '127.0.0.1',
+    remotePort,
+    ...over,
+  });
+  const linksOf = (connections, managedList = [frontend, api], extra = {}) => {
+    const snap = { ...snapshot(listeners, processes), connections, ...extra };
+    return ports.correlateLinks(snap, managedList, ports.correlate(snap, managedList));
+  };
+
+  test('a connection seen from both ends is one link, from the caller to the listener', () => {
+    const found = linksOf([connection(100, 51000, 3001), connection(200, 3001, 51000)]);
+    assert.equal(found.length, 1);
+    assert.equal(found[0].processId, 'proc_fe');
+    assert.equal(found[0].port, 3001);
+    assert.equal(found[0].target.kind, 'managed');
+    assert.equal(found[0].target.processId, 'proc_api');
+  });
+
+  test('a listener Paddock does not run is a link to an unmanaged target, named by the OS', () => {
+    const [found] = linksOf([connection(200, 52000, 6379)]);
+    assert.equal(found.processId, 'proc_api');
+    assert.deepEqual(
+      { kind: found.target.kind, name: found.target.name, processId: found.target.processId },
+      { kind: 'unmanaged', name: 'redis-server', processId: null }
+    );
+  });
+
+  test('a caller is matched by its process group, like a listener', () => {
+    const snapProcesses = [...processes, proc({ pid: 250, pgid: 200, ppid: 1 })];
+    const snap = { ...snapshot(listeners, snapProcesses), connections: [connection(250, 52000, 6379)] };
+    const found = ports.correlateLinks(snap, [frontend, api], ports.correlate(snap, [frontend, api]));
+    assert.equal(found[0]?.processId, 'proc_api');
+  });
+
+  test('a caller that is not a managed process by a strong tier draws no link', () => {
+    assert.deepEqual(linksOf([connection(300, 53000, 3001)]), []);
+  });
+
+  test('many sockets from one caller to one port are one link', () => {
+    const found = linksOf([connection(200, 52000, 6379), connection(200, 52001, 6379), connection(200, 52002, 6379)]);
+    assert.equal(found.length, 1);
+  });
+
+  test('a connection to another machine is not a link, even on a port something here listens on', () => {
+    assert.deepEqual(linksOf([connection(100, 51000, 3001, { remoteAddress: '10.0.0.8' })]), []);
+  });
+
+  test("the machine's own LAN address counts as local", () => {
+    const found = linksOf(
+      [connection(100, 51000, 3001, { remoteAddress: '192.168.1.9' })],
+      [frontend, api],
+      { localAddresses: new Set(['192.168.1.9']) }
+    );
+    assert.equal(found.length, 1);
+  });
+
+  test('a v4-mapped address reaches a dual-stack listener', () => {
+    const found = linksOf([connection(100, 51000, 3001, { remoteAddress: '::ffff:127.0.0.1' })]);
+    assert.equal(found.length, 1);
+  });
+
+  test('a process connecting to its own second port is not a link', () => {
+    const snapListeners = [...listeners, listener({ pid: 200, port: 9090 })];
+    const snap = { ...snapshot(snapListeners, processes), connections: [connection(200, 54000, 9090)] };
+    assert.deepEqual(ports.correlateLinks(snap, [frontend, api], ports.correlate(snap, [frontend, api])), []);
+  });
+});
+
 describe('termination safety', () => {
   test('refuses pid 1, pid 0, negatives and non-integers without signalling anything', async () => {
     for (const pid of [1, 0, -1, -5, 1.5, NaN, null, undefined]) {

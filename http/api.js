@@ -130,6 +130,10 @@ const routes = [
   route('POST', '/api/mcp/start', () => service.startMcp()),
   route('POST', '/api/mcp/stop', () => service.stopMcp()),
   route('POST', '/api/mcp/restart', () => service.restartMcp()),
+  // Writes into another program's settings, so dashboard-only: the path names a client from a fixed
+  // list, never a file, and the URL written is this server's own.
+  route('GET', '/api/mcp/clients', () => service.listMcpClients()),
+  route('POST', '/api/mcp/clients/:clientId', ({ params }) => service.installMcpClient(params.clientId)),
   // The agent audit. Dashboard-only on purpose: an agent does not get to read, or page through,
   // the record of what agents did.
   route('GET', '/api/mcp/sessions', () => service.listMcpSessions()),
@@ -142,6 +146,9 @@ const routes = [
     service.listPorts({ force: url.searchParams.get('force') === '1' })),
   route('GET', '/api/ports/:port', ({ params }) => service.getPort(portParam(params.port))),
   route('POST', '/api/ports/:port/stop', ({ params }) => service.stopPort(portParam(params.port))),
+
+  // The first fill of the sidebar's meters; every reading after it arrives on /api/events.
+  route('GET', '/api/system', () => service.getSystemStats()),
 ];
 
 /**

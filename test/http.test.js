@@ -329,8 +329,9 @@ test('REST: create, add a process, list, get, patch and delete round-trips throu
       uptimeMs: null,
       // Decorated from the last port scan; `[]` once one has run, `null` before that.
       ports: proc.ports,
-      // A `sleep` serves nothing, so it never has one.
+      // A `sleep` serves nothing, so it never has either.
       favicon: null,
+      web: null,
     }
   );
   assert.ok(proc.ports === null || Array.isArray(proc.ports), 'ports is null or an array');
@@ -596,6 +597,16 @@ test('GET /api/health reports ok, names the service, and gives the server pid', 
   assert.equal(typeof body.uptimeMs, 'number');
 });
 
+test('GET /api/system reports CPU, memory and disk, and how often the stream repeats them', async () => {
+  const res = await api('/api/system');
+  assert.equal(res.status, 200);
+  const body = res.json();
+  assert.equal(body.intervalMs, 2_000);
+  assert.equal(typeof body.cpu.cores, 'number');
+  assert.ok(body.memory.used <= body.memory.total);
+  assert.ok(body.disk.free <= body.disk.total);
+});
+
 test('GET /api/workspace/directory browses a real directory by query parameter', async () => {
   await fs.mkdir(path.join(repoDir, 'packages'), { recursive: true });
   await fs.writeFile(path.join(repoDir, 'notes.txt'), 'a file, not a directory');
@@ -828,11 +839,13 @@ test('MCP initialize returns the paddock server info over SSE framing', async ()
   assert.match(res.message.result.instructions, /list_applications/);
 });
 
-test('MCP tools/list returns exactly the twenty-one contract tools', async () => {
+test('MCP tools/list returns exactly the twenty-three contract tools', async () => {
   const res = await mcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
   assert.equal(res.status, 200);
   const names = res.message.result.tools.map((t) => t.name).sort();
   assert.deepEqual(names, [
+    'create_application',
+    'add_process',
     'get_application',
     'list_applications',
     'read_logs',
@@ -855,6 +868,84 @@ test('MCP tools/list returns exactly the twenty-one contract tools', async () =>
     'create_database',
     'drop_database',
   ].sort());
+});
+
+test('MCP creates a process-based application and adds a service to it', async () => {
+  const created = await mcp({
+    jsonrpc: '2.0',
+    id: 22,
+    method: 'tools/call',
+    params: {
+      name: 'create_application',
+      arguments: {
+        name: `mcp-created-${++appCounter}`,
+        description: 'Created by the MCP test',
+        auto_start: true,
+      },
+    },
+  });
+  const application = toolPayload(created.message.result);
+  assert.equal(application.kind, 'processes');
+  assert.equal(application.autoStart, true);
+  assert.deepEqual(application.processes, []);
+
+  const added = await mcp({
+    jsonrpc: '2.0',
+    id: 23,
+    method: 'tools/call',
+    params: {
+      name: 'add_process',
+      arguments: {
+        application_id: application.id,
+        name: 'api',
+        repository_path: repoDir,
+        command: 'node server.js',
+        env: { PORT: 4321, DEBUG: true },
+      },
+    },
+  });
+  const updated = toolPayload(added.message.result);
+  assert.equal(updated.id, application.id);
+  assert.equal(updated.processes.length, 1);
+  assert.equal(updated.processes[0].name, 'api');
+  assert.equal(updated.processes[0].repositoryPath, repoDir);
+  assert.equal(updated.processes[0].workingDirectory, repoDir);
+  assert.equal(updated.processes[0].command, 'node server.js');
+  assert.deepEqual(updated.processes[0].env, { PORT: '4321', DEBUG: 'true' });
+  assert.equal(updated.processes[0].enabled, true);
+
+  const calls = (await api(`/api/mcp/calls?sessionId=${mcpSession}&tool=add_process&limit=1`)).json();
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].args.env, { PORT: '[redacted]', DEBUG: '[redacted]' });
+});
+
+test('MCP add_process refuses a PostgreSQL application', async () => {
+  const clusterDir = path.join(dataDir, `mcp-add-process-cluster-${++appCounter}`);
+  await fs.mkdir(clusterDir);
+  await fs.writeFile(path.join(clusterDir, 'PG_VERSION'), '16\n');
+  const created = await postJson('/api/applications', {
+    name: `mcp-add-process-postgres-${appCounter}`,
+    kind: 'postgres',
+    postgres: { dataDirectory: clusterDir, port: 1 },
+  });
+  assert.equal(created.status, 200, created.text);
+
+  const res = await mcp({
+    jsonrpc: '2.0',
+    id: 24,
+    method: 'tools/call',
+    params: {
+      name: 'add_process',
+      arguments: {
+        application_id: created.json().id,
+        name: 'api',
+        repository_path: repoDir,
+        command: 'node server.js',
+      },
+    },
+  });
+  assert.equal(res.message.result.isError, true);
+  assert.match(res.message.result.content[0].text, /ValidationError: .*PostgreSQL application/);
 });
 
 test('MCP database tools refuse an application that is not a PostgreSQL one, naming why', async () => {
@@ -973,6 +1064,16 @@ test('a forged Host on /mcp is refused by the local-origin guard', async () => {
   assert.deepEqual(JSON.parse(res.body), {
     error: { message: 'local requests only', code: 'forbidden' },
   });
+});
+
+test('GET /api/mcp/clients lists Cursor and Claude Code; an unknown client is 404 and writes nothing', async () => {
+  const listed = await api('/api/mcp/clients');
+  assert.equal(listed.status, 200, listed.text);
+  assert.deepEqual(listed.json().clients.map((client) => client.id), ['cursor', 'claude-code']);
+
+  const unknown = await postJson('/api/mcp/clients/vim', {});
+  assert.equal(unknown.status, 404, unknown.text);
+  assert.match(unknown.json().error.message, /unknown MCP client 'vim'/);
 });
 
 test('an open MCP session is listed with the client that opened it', async () => {
@@ -1140,6 +1241,11 @@ test('SSE delivers a log event for a started process and survives the client dis
   assert.equal(entry.entry.stream, 'stdout');
   assert.equal(typeof entry.entry.seq, 'number');
   assert.match(entry.entry.ts, /^\d{4}-\d{2}-\d{2}T/);
+
+  // The sidebar's meters ride the same stream, on a timer of their own.
+  await readUntil((f) => f.event === 'system', 'a system load frame');
+  const systemFrame = frames.find((f) => f.event === 'system');
+  assert.equal(typeof systemFrame.data.memory.percent, 'number');
 
   // The same line must also be readable through the REST log endpoint.
   const logs = await api(`/api/applications/${app.id}/logs`);

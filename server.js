@@ -11,7 +11,7 @@
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
-import { DISPLAY_HOST, HOST, PORT, SHUTDOWN_GRACE_MS } from './config.js';
+import { DISPLAY_HOST, HOST, PORT, SERVE_UI, SHUTDOWN_GRACE_MS } from './config.js';
 import { json } from './http/respond.js';
 import { handleApi } from './http/api.js';
 import { handleEvents, start as startEvents, stop as stopEvents } from './http/events.js';
@@ -21,7 +21,7 @@ import { handleStatic } from './http/static.js';
 import { loginShellPath } from './platform/index.js';
 import { reapOrphans, killAllSync } from './process-manager.js';
 import {
-  autoStartApplications, bootstrapMcp, loadFavicons, shutdown as shutdownService,
+  autoStartApplications, bootstrapMcp, loadFavicons, loadLinks, shutdown as shutdownService,
 } from './service.js';
 import { isGuardedApiPath, isLocalRequest } from './http/local-origin.js';
 
@@ -82,12 +82,12 @@ async function route(req, res) {
     // `/mcp` is the agent endpoint on the MCP port. A browser bookmark to it on the dashboard port
     // should land on the settings page instead of a JSON error.
     if (req.method === 'GET' && req.headers.accept?.includes('text/html')) {
-      res.writeHead(302, { Location: '/mcp-settings', 'Cache-Control': 'no-store' });
+      res.writeHead(302, { Location: '/settings/mcp', 'Cache-Control': 'no-store' });
       return res.end();
     }
     return json(res, 404, {
       error: {
-        message: 'MCP is served on its own port. Open /mcp-settings in the dashboard or GET /api/mcp.',
+        message: 'MCP is served on its own port. Open /settings/mcp in the dashboard or GET /api/mcp.',
         code: 'mcp_moved',
       },
     });
@@ -103,7 +103,7 @@ async function route(req, res) {
     const message = `no route for ${req.method} ${pathname}`;
     return json(res, 404, { error: { message, code: 'not_found' } });
   }
-  if (await handleStatic(req, res, url)) return;
+  if (SERVE_UI && (await handleStatic(req, res, url))) return;
   json(res, 404, { error: { message: `not found: ${pathname}`, code: 'not_found' } });
 }
 
@@ -189,12 +189,14 @@ async function main() {
   await reapOrphans().catch((err) => console.error(`[paddock] orphan reap failed: ${err.message}`));
   // A cache: an unreadable one costs icons until each service runs again, not the startup.
   await loadFavicons().catch((err) => console.error(`[paddock] favicon cache unreadable: ${err.message}`));
+  await loadLinks().catch((err) => console.error(`[paddock] link cache unreadable: ${err.message}`));
   startEvents();
   markReady();
   await bootstrapMcp();
-  // Printed last, so the line means "usable" — tests and scripts/dev.js wait for it.
+  // Printed last, so the line means "usable" — tests, the desktop app and scripts/dev.js wait for it.
+  // `UI` when this process serves the dashboard, `API` when the desktop window owns the UI instead.
   const { port } = server.address();
-  console.log(`[paddock] UI   http://${DISPLAY_HOST}:${port}`);
+  console.log(`[paddock] ${SERVE_UI ? 'UI ' : 'API'}  http://${DISPLAY_HOST}:${port}`);
   // Last, and not awaited. After the port is held, so a second copy never starts anything; after the
   // reaper, so a leftover from a crashed run has released its port before its replacement binds it;
   // and after the startup line, so the dashboard is usable while the applications come up in it.

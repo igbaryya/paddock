@@ -1,16 +1,16 @@
 /**
- * MCP installation and runtime: the port agents use, whether the listener is up and why not, which
- * agents are connected and what they called, and a short history of the listener itself.
+ * The MCP tab of Settings: the port agents use, whether the listener is up and why not, which agents
+ * are connected and what they called, and a short history of the listener itself.
  */
 import { useEffect, useId, useState } from 'react';
 import * as api from '../api.js';
-import AgentActivity from '../components/AgentActivity.jsx';
-import CopyButton from '../components/CopyButton.jsx';
-import Icon from '../components/Icon.jsx';
-import IconButton from '../components/IconButton.jsx';
-import SettingsGroup from '../components/SettingsGroup.jsx';
-import StatusDot from '../components/StatusDot.jsx';
-import Toolbar from '../components/Toolbar.jsx';
+import AgentActivity from './AgentActivity.jsx';
+import CopyButton from './CopyButton.jsx';
+import Icon from './Icon.jsx';
+import IconButton from './IconButton.jsx';
+import McpClients from './McpClients.jsx';
+import SettingsGroup from './SettingsGroup.jsx';
+import StatusDot from './StatusDot.jsx';
 
 /** @param {{message: string}} props */
 const ErrorNotice = ({ message }) => (
@@ -29,7 +29,7 @@ const formatWhen = (iso) => {
  * @param {{busy: boolean, live: {sessions: object[]|null, calls: object[]},
  *          onAction: (action: string, body?: object) => Promise<void>}} props
  */
-export default function McpPage({ busy, live, onAction }) {
+export default function McpSettings({ busy, live, onAction }) {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
   const [portDraft, setPortDraft] = useState('');
@@ -54,37 +54,25 @@ export default function McpPage({ busy, live, onAction }) {
     await load();
   };
 
-  const toolbar = <Toolbar title="MCP" subtitle="Agents connect here." />;
-
   if (!state) {
-    return (
+    return error ? (
       <>
-        {toolbar}
-        {error ? (
-          <>
-            <ErrorNotice message={error} />
-            <button type="button" className="btn" onClick={load}>
-              Retry
-            </button>
-          </>
-        ) : (
-          <p className="empty-inline" role="status">
-            Loading…
-          </p>
-        )}
+        <ErrorNotice message={error} />
+        <button type="button" className="btn" onClick={load}>
+          Retry
+        </button>
       </>
+    ) : (
+      <p className="empty-inline" role="status">
+        Loading…
+      </p>
     );
   }
 
-  const status = !state.configured
-    ? 'stopped'
-    : state.running
-      ? 'running'
-      : 'stopped';
+  const status = state.configured && state.running ? 'running' : 'stopped';
 
   return (
     <>
-      {toolbar}
       {/* A refresh that failed after an action: what is shown below may be out of date. */}
       {error && <ErrorNotice message={`Could not refresh: ${error}`} />}
       {/* Enabled but not listening is the one state where an agent silently cannot connect. */}
@@ -93,13 +81,13 @@ export default function McpPage({ busy, live, onAction }) {
       )}
 
       <SettingsGroup
-        title="Status"
-        note="The dashboard and MCP use different ports. Changing the MCP port requires a restart of the listener."
+        title="Listener"
+        note="The dashboard and MCP use different ports. Changing the MCP port restarts the listener."
       >
         <div className="group-row">
           <span className="row-icon"><Icon name="braces" size={14} /></span>
           <div className="row-text">
-            <span className="row-title">Listener</span>
+            <span className="row-title">MCP server</span>
             <span className="row-sub">
               {state.running
                 ? `Running on port ${state.boundPort ?? state.port}`
@@ -134,17 +122,20 @@ export default function McpPage({ busy, live, onAction }) {
 
         {state.url && (
           <div className="group-row">
+            <span className="row-icon muted"><Icon name="globe" size={14} /></span>
             <div className="row-text">
               <span className="row-title">URL</span>
-              <div className="command-well address">
-                <code>{state.url}</code>
-                <CopyButton text={state.url} label="Copy MCP URL" />
-              </div>
+              <span className="row-sub">Give this to your agent.</span>
+            </div>
+            <div className="command-well address settings-url">
+              <code>{state.url}</code>
+              <CopyButton text={state.url} label="Copy MCP URL" />
             </div>
           </div>
         )}
 
         <div className="group-row">
+          <span className="row-icon muted"><Icon name="ports" size={14} /></span>
           <div className="row-text">
             <label className="row-title" htmlFor={portId}>
               Port
@@ -173,7 +164,7 @@ export default function McpPage({ busy, live, onAction }) {
                 disabled={busy}
                 onChange={(event) => setPortDraft(event.target.value)}
               />
-              <button type="submit" className="btn small" disabled={busy}>
+              <button type="submit" className="btn small" disabled={busy || portDraft === String(state.port)}>
                 Save
               </button>
             </form>
@@ -197,6 +188,8 @@ export default function McpPage({ busy, live, onAction }) {
           </dl>
         )}
       </SettingsGroup>
+
+      <McpClients url={state.url} />
 
       <AgentActivity live={live} />
 
