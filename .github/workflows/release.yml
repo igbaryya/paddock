@@ -1,9 +1,11 @@
-# Builds the desktop app for macOS and Windows when a version tag is pushed, uploads the installers
-# and the update feed to a draft GitHub release, and publishes it once both builds have succeeded.
-# Publishing is what puts it on the download site and in front of every installed app; a build that
-# fails on either OS leaves the draft unpublished, so nobody gets half a release.
+# Releases the desktop app on every push to main that changes it: tags the commit with the next
+# version, builds it for macOS and Windows, uploads the installers and the update feed to a draft
+# GitHub release, and publishes it once both builds have succeeded. Publishing is what puts it on the
+# download site and in front of every installed app; a build that fails on either OS leaves the draft
+# unpublished, so nobody gets half a release.
 #
-#   npm version patch && git push --follow-tags
+# The version lives in the tags, not in package.json: each release is the patch after the highest v*
+# tag. A minor or major release is made by raising the version in the root package.json.
 #
 # Signing is optional here and warned about when missing — an unsigned build is still useful to test,
 # but Gatekeeper and SmartScreen block it, and macOS will not update an unsigned app. What to set is in
@@ -12,35 +14,72 @@ name: Release desktop app
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'site/**'
+      - 'test/**'
+      - '.cursor/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# One release at a time, each reading the tags the last one pushed. A push while one runs waits, and a
+# newer push replaces it in the queue — its commit ships everything the replaced one would have.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
+  cancel-in-progress: false
 
 jobs:
   draft:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-tags: true
 
-      - name: Tag matches the version being built
+      # A commit that is already tagged keeps its tag, so re-running a failed release retries that
+      # version instead of shipping the same code as a new one.
+      - name: Next version
+        id: version
         run: |
-          version="v$(node -p "require('./package.json').version")"
-          if [ "$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json ($version); electron-builder would upload to $version."
-            exit 1
+          tagged="$(git tag --list 'v*' --points-at HEAD | head -1)"
+          if [ -n "$tagged" ]; then
+            echo "tag=$tagged" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          declared="$(node -p "require('./package.json').version")"
+          released="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -1)"
+          highest="$(printf '%s\n' "$declared" "$released" | sort -V | tail -1)"
+          if [ "$highest" != "$released" ]; then
+            echo "tag=v$declared" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          IFS=. read -r major minor patch <<< "$released"
+          echo "tag=v$major.$minor.$((patch + 1))" >> "$GITHUB_OUTPUT"
+
+      # Pushed with the workflow's token, which starts no other workflow: this run is what builds it.
+      - name: Tag the pushed commit
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git rev-parse -q --verify "refs/tags/$TAG" > /dev/null && exit 0
+          git tag "$TAG"
+          git push origin "$TAG"
 
       # Created once, here: two builds each creating it would race and leave two drafts.
       - name: Draft release for both builds to upload into
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --generate-notes --title "Paddock ${GITHUB_REF_NAME#v}"
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --draft --verify-tag --generate-notes --title "Paddock ${TAG#v}"
 
   build:
     needs: draft
@@ -66,6 +105,14 @@ jobs:
           npm ci
           npm ci --prefix ui
           npm ci --prefix desktop
+
+      # electron-builder takes the app's version from the root package, and uploads to the release
+      # tagged with it.
+      - name: Version the build
+        shell: bash
+        env:
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
 
       # Before the tests: the HTTP suite serves the built dashboard.
       - name: Build the dashboard
@@ -153,10 +200,11 @@ jobs:
 
   # Only after every build: `needs` a matrix waits for all of it, and skips this if any leg failed.
   publish:
-    needs: build
+    needs: [draft, build]
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          TAG: ${{ needs.draft.outputs.tag }}
+        run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

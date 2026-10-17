@@ -133,23 +133,23 @@ outside the app's asar archive.
 
 ### Releasing
 
-```bash
-npm version patch          # or minor / major; the version and the tag come from the root package
-git push --follow-tags
-```
+Every push to `main` that changes the app is a release. Pushes that only touch Markdown, `docs/`,
+`site/`, `test/` or `.cursor/` are not. [.github/workflows/release.yml](.github/workflows/release.yml):
 
-The tag starts [.github/workflows/release.yml](.github/workflows/release.yml), which:
-
-1. Fails if the tag does not match the version in `package.json`.
-2. Creates one draft release for that tag.
+1. Picks the version: the patch after the highest `v*` tag, or the version in the root
+   `package.json` when that is higher — raise it there for a minor or major release.
+2. Tags the pushed commit with it and creates one draft release for that tag.
 3. On macOS runs the test suite, then builds the `.dmg` and `.zip` files for both architectures.
    On Windows it builds the NSIS installer.
 4. Uploads everything, including the `latest*.yml` files installed apps read, to the draft.
 5. Publishes the release once both builds have succeeded. If either fails, the draft stays a draft
    and nobody sees it.
 
-The tag is the release: pushing it is what ships. The download site picks the published release up
-from the public API — no extra workflow step.
+The version lives in the tags; `package.json` is only raised by hand. A failed release keeps its tag,
+so the next push skips that number — or re-run it from the Actions tab, which retries the same
+version on the same commit. **Run workflow** there releases `main` by hand. Releases run one at a
+time; a push made while one runs waits for it. The download site picks the published release up from the public
+API — no extra workflow step.
 
 Publishing is instant and reaches every installed app on its next check; there is no staged rollout.
 Installed apps never downgrade, so a bad release is withdrawn by turning it back into a draft — which
