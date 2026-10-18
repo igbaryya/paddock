@@ -828,13 +828,15 @@ test('path traversal never serves a file from outside the UI directory', async (
 });
 
 test('MCP initialize returns the paddock server info over SSE framing', async () => {
+  // The release version, which CI sets from the tag rather than reading it from the commit.
+  const { version } = JSON.parse(await fs.readFile(path.join(ROOT_DIR, 'package.json'), 'utf8'));
   const res = await mcp(initializeRequest('test'));
   assert.equal(res.status, 200);
   assert.match(res.contentType, /^text\/event-stream/);
   assert.match(res.sessionId, /^[0-9a-f-]{36}$/);
   assert.equal(res.message.jsonrpc, '2.0');
   assert.equal(res.message.id, 1);
-  assert.deepEqual(res.message.result.serverInfo, { name: 'paddock', version: '1.0.0' });
+  assert.deepEqual(res.message.result.serverInfo, { name: 'paddock', version });
   assert.deepEqual(res.message.result.capabilities.tools, { listChanged: true });
   assert.match(res.message.result.instructions, /list_applications/);
 });
