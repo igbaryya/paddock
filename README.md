@@ -134,7 +134,7 @@ outside the app's asar archive.
 ### Releasing
 
 Every push to `main` that changes the app is a release. Pushes that only touch Markdown, `docs/`,
-`site/`, `test/` or `.cursor/` are not. [.github/workflows/release.yml](.github/workflows/release.yml):
+`site/` or `.cursor/` are not. [.github/workflows/release.yml](.github/workflows/release.yml):
 
 1. Picks the version: the patch after the highest `v*` tag, or the version in the root
    `package.json` when that is higher — raise it there for a minor or major release.

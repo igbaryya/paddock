@@ -15,11 +15,11 @@ name: Release desktop app
 on:
   push:
     branches: [main]
+    # test/ is not here: the tests gate the release, so changing them runs it.
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'site/**'
-      - 'test/**'
       - '.cursor/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
