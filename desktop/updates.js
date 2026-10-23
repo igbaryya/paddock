@@ -8,11 +8,12 @@
  * Only an installed app updates: a checkout, or a build packed locally without publishing, has no feed
  * to read, and its state stays 'unavailable'.
  * macOS will not install an update into an unsigned app, so an unsigned build finds updates and fails
- * to apply them; that failure is logged, and shows as an 'error' state.
+ * to apply them; that failure is logged, and shows as an 'error' state rather than an offer to install.
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { app } from 'electron';
+// Electron's own updater is Squirrel.Mac on macOS, which electron-updater hands the download to.
+import { app, autoUpdater as nativeUpdater } from 'electron';
 import electronUpdater from 'electron-updater';
 
 // electron-updater is CommonJS, so its named export is reached through the default one.
@@ -96,7 +97,12 @@ function followUpdater() {
     setState({ status: 'downloading', version, progress: 0, checkedAt: now() })
   );
   autoUpdater.on('download-progress', ({ percent }) => setState({ progress: Math.round(percent) }));
-  autoUpdater.on('update-downloaded', ({ version }) => setState({ status: 'ready', version, progress: 100 }));
+  // On macOS an update is installable once Squirrel.Mac holds it. electron-updater reports its own
+  // download first; Squirrel then fetches it and checks its signature against this app's. Offered
+  // before that, an install could wait forever with the server already stopped. Squirrel's refusal
+  // arrives as 'error' below.
+  const installer = process.platform === 'darwin' ? nativeUpdater : autoUpdater;
+  installer.on('update-downloaded', () => setState({ status: 'ready', progress: 100 }));
   autoUpdater.on('error', (err) => {
     console.error(`[paddock] update: ${err.message}`);
     setState({ status: 'error', error: shortError(err), progress: null, checkedAt: now() });

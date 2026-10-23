@@ -240,7 +240,8 @@ async function main() {
   if (!server) return;
   const pageUrl = app.isPackaged ? server.url : await devDashboardUrl();
   if (!pageUrl) return;
-  const open = () => showDashboard(pageUrl);
+  // Once a quit or an update has begun the server is stopping or gone, and a window would open blank.
+  const open = () => (quitting ? Promise.resolve() : showDashboard(pageUrl));
   app.on('second-instance', open);
   app.on('activate', open);
   const installUpdateNow = () => installUpdateAfterStopping(server);
