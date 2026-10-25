@@ -10,7 +10,6 @@
  */
 import StatusDot from './StatusDot.jsx';
 import Icon, { Logo } from './Icon.jsx';
-import ThemeSwitcher from './ThemeSwitcher.jsx';
 import SystemMeters from './SystemMeters.jsx';
 import NetworkSummary from './NetworkSummary.jsx';
 import { Link, paths } from '../router.jsx';
@@ -53,8 +52,7 @@ function NavItem({ to, icon, label, active, count, collapsed }) {
 /**
  * @param {{applications: object[], route: object, connection: string, portCount: number|null,
  *          system: {latest: object|null, history: object[]}, network: object|null,
- *          onCreate: () => void, onOpenPalette: () => void, collapsed: boolean,
- *          onToggleCollapsed: () => void}} props
+ *          onOpenPalette: () => void, collapsed: boolean, onToggleCollapsed: () => void}} props
  */
 export default function Sidebar({
   applications,
@@ -63,7 +61,6 @@ export default function Sidebar({
   portCount,
   system,
   network,
-  onCreate,
   onOpenPalette,
   collapsed,
   onToggleCollapsed,
@@ -73,7 +70,6 @@ export default function Sidebar({
   const updateReady = updates?.state?.status === 'ready';
   const { bindings } = useShortcuts();
   const toggleLabel = withKeys(`${collapsed ? 'Expand' : 'Collapse'} sidebar`, bindings.toggleSidebar);
-  const newLabel = withKeys('New application', bindings.newApplication);
 
   return (
     <nav className="sidebar" aria-label="Main">
@@ -153,7 +149,7 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* The always-there controls, pinned together so each is one click from any page. */}
+      {/* The machine and Paddock itself, pinned together so each is in view from any page. */}
       <div className="sidebar-foot">
         <SystemMeters system={system} stale={connection !== 'live'} />
         <NetworkSummary network={network} stale={connection !== 'live'} />
@@ -167,17 +163,6 @@ export default function Sidebar({
             <span className="nav-label">Update {updates.state.version} ready</span>
           </Link>
         )}
-        <ThemeSwitcher />
-        <button
-          type="button"
-          className="nav-item sidebar-add"
-          onClick={onCreate}
-          aria-label={collapsed ? 'New application' : undefined}
-          title={newLabel}
-        >
-          <Icon name="plus" />
-          <span className="nav-label">New application</span>
-        </button>
         <div className="sidebar-brand">
           <Link to={paths.overview()} className="brand" title={collapsed ? 'Paddock' : undefined}>
             <Logo size={24} />

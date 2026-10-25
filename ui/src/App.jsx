@@ -333,7 +333,6 @@ export default function App() {
           portCount={ports.ports?.length ?? null}
           system={live.system}
           network={live.network}
-          onCreate={() => openApplicationForm()}
           onOpenPalette={() => setPaletteOpen(true)}
           collapsed={sidebar.collapsed}
           onToggleCollapsed={sidebar.toggle}

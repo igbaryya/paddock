@@ -546,8 +546,6 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-/* An action drawn as a row, the way the OS offers "Add" at the foot of a sidebar: quieter than the
-   rows it adds to, and nothing like the page's primary button. */
 .sidebar-search {
   display: flex;
   align-items: center;
@@ -591,18 +589,6 @@ textarea {
   margin-left: auto;
 }
 
-.sidebar-add {
-  width: 100%;
-  background: none;
-  border: 0;
-  color: var(--text-dim);
-  cursor: pointer;
-}
-
-.sidebar-add:hover {
-  color: var(--text);
-}
-
 /* The footer group is pinned to the bottom so it does not move as the application list grows. */
 .sidebar-foot {
   margin-top: auto;
@@ -615,13 +601,6 @@ textarea {
 .sidebar-update {
   color: var(--accent);
   background: var(--accent-soft);
-}
-
-/* Fills the sidebar's width in three equal parts, so the labels never wrap or truncate. */
-.sidebar .theme-switcher {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  margin-bottom: var(--space-1);
 }
 
 /* The machine's load. Rows share the sidebar's 16px glyph column; the colour is green until a
@@ -848,7 +827,6 @@ html.desktop-mac .sidebar-top .sidebar-toggle {
     .sidebar-label,
     .sidebar-search-label,
     .command-kbd,
-    .theme-switcher,
     .brand-name,
     .app-name,
     .app-count,
@@ -893,7 +871,6 @@ html.desktop-mac .sidebar-top .sidebar-toggle {
     .sidebar-toggle,
     .sidebar-search,
     .nav-item,
-    .sidebar-add,
     .sidebar-update
   ) {
     width: 36px;
@@ -985,7 +962,7 @@ html.desktop-mac .app.no-sidebar .toolbar {
   padding-left: 104px;
 }
 
-/* The same two controls at the far right of every page, set off from the page's own by a hairline. */
+/* The same controls at the far right of every page, set off from the page's own by a hairline. */
 .toolbar-corner {
   flex: none;
   display: flex;

@@ -3,12 +3,13 @@
  * page's own controls on the right, on a strip of material that stays put while the page scrolls
  * under it. A page that sits below another carries a back button to it, where the OS puts one.
  *
- * The far right corner is the same on every page but Settings — notifications and Settings — so it
- * comes from context rather than from each page passing it in.
+ * The far right corner is the same on every page but Settings — theme, notifications and Settings —
+ * so it comes from context rather than from each page passing it in.
  */
 import { createContext, useContext } from 'react';
 import Icon from './Icon.jsx';
 import NotificationsButton from './NotificationsButton.jsx';
+import { ThemeButton } from './ThemeSwitcher.jsx';
 import { Link, paths, useRoute } from '../router.jsx';
 
 /** Provided by App: the notifications the bell shows. */
@@ -21,6 +22,7 @@ function ToolbarCorner() {
   if (!notifications || onSettings) return null;
   return (
     <div className="toolbar-corner">
+      <ThemeButton />
       <NotificationsButton notifications={notifications} />
       <Link
         to={paths.settings()}
