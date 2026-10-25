@@ -1,11 +1,11 @@
 /**
- * A four-route router over the History API.
+ * A five-route router over the History API.
  *
  * Real URLs rather than hash fragments, because an application's page is worth linking to and
  * pasting into a ticket — the manager already serves index.html for any extension-less path, so a
  * deep link survives a refresh.
  *
- * This is deliberately not a routing library. There are four routes with one parameter between
+ * This is deliberately not a routing library. There are five routes with one parameter between
  * them; a dependency would be more code to reason about than the twenty lines below, and the whole
  * surface is `useRoute`, `navigate` and `Link`, which is what a library would be swapped in for.
  */
@@ -18,7 +18,8 @@ const NAVIGATED = 'paddock:navigated';
 export const SETTINGS_TABS = ['general', 'startup', 'shortcuts', 'mcp', 'about'];
 
 export const paths = {
-  overview: () => '/',
+  dashboard: () => '/',
+  overview: () => '/applications',
   application: (id) => `/applications/${encodeURIComponent(id)}`,
   ports: () => '/ports',
   mcp: () => '/settings/mcp',
@@ -28,7 +29,8 @@ export const paths = {
 /** @param {string} pathname @returns {{name: string, applicationId?: string, tab?: string}} */
 function parse(pathname) {
   const segments = pathname.split('/').filter(Boolean);
-  if (segments.length === 0) return { name: 'overview' };
+  if (segments.length === 0) return { name: 'dashboard' };
+  if (segments[0] === 'applications' && segments.length === 1) return { name: 'overview' };
   if (segments[0] === 'ports' && segments.length === 1) return { name: 'ports' };
   if (segments[0] === 'settings' && segments.length === 1) return { name: 'settings', tab: 'general' };
   if (segments[0] === 'settings' && segments.length === 2 && SETTINGS_TABS.includes(segments[1])) {

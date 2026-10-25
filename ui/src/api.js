@@ -212,6 +212,27 @@ export const getSettings = (signal) => request('GET', '/settings', { signal });
  */
 export const updateSettings = (patch) => request('PATCH', '/settings', { body: patch });
 
+/**
+ * Whether the setup wizard opens by itself — a fresh install only — and when it was last finished.
+ * @param {AbortSignal} [signal] @returns {Promise<{completedAt: string|null, needed: boolean}>}
+ */
+export const getSetup = (signal) => request('GET', '/setup', { signal });
+
+/** Finished or skipped: either way it does not open by itself again. */
+export const completeSetup = () => request('POST', '/setup/complete');
+
+/**
+ * Paddock's mark: the user's image as a data URL, or null for Paddock's own.
+ * @param {AbortSignal} [signal]
+ * @returns {Promise<{logo: {dataUrl: string, contentType: string, bytes: number, updatedAt: string}|null}>}
+ */
+export const getBranding = (signal) => request('GET', '/branding', { signal });
+
+/** @param {string} dataUrl a base64 data URL; the manager reads the type from the bytes, not the label */
+export const setLogo = (dataUrl) => request('PUT', '/branding/logo', { body: { dataUrl } });
+
+export const resetLogo = () => request('DELETE', '/branding/logo');
+
 /** @param {AbortSignal} [signal] */
 export const getMcp = (signal) => request('GET', '/mcp', { signal });
 

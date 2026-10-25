@@ -10,12 +10,14 @@ import Icon from './Icon.jsx';
 import { describePrivateIp, describePublicIp } from '../format.js';
 
 /**
+ * A value with where it came from beside it, and a copy button when there is something to copy.
+ * Exported for the dashboard's network summary.
  * @param {{label: string, described: {address: string|null, value: string, note: string}}} props
  */
-function AddressFact({ label, described }) {
+export function AddressFact({ label, described }) {
   const { address, value, note } = described;
   return (
-    <div className="fact">
+    <div className="fact address-fact">
       <dt>{label}</dt>
       <dd>
         <code>{value}</code>

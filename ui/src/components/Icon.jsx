@@ -26,6 +26,7 @@ import {
   Database,
   ExternalLink,
   Folder,
+  Gauge,
   GitBranch,
   Globe,
   HardDrive,
@@ -46,6 +47,7 @@ import {
   Plus,
   Power,
   RefreshCw,
+  Rocket,
   RotateCw,
   Search,
   SlidersHorizontal,
@@ -55,8 +57,11 @@ import {
   TriangleAlert,
   X,
 } from 'lucide-react';
+import { DEFAULT_LOGO, useBranding } from '../useBranding.js';
 
 const GLYPHS = {
+  // Dashboard: a gauge — the read of everything at once.
+  dashboard: Gauge,
   // Applications: four panes, the overview grid itself.
   grid: LayoutGrid,
   // Ports: traffic in both directions.
@@ -112,6 +117,8 @@ const GLYPHS = {
   settings: SlidersHorizontal,
   bell: Bell,
   keyboard: Keyboard,
+  // Setup: the launch — what the first-run wizard gets a fresh install to.
+  setup: Rocket,
   'sidebar-collapse': PanelLeftClose,
   'sidebar-expand': PanelLeftOpen,
 };
@@ -139,12 +146,23 @@ export default function Icon({ name, size = 16, className, title }) {
 }
 
 /**
- * The product mark — a P and a live dot (see public/favicon.svg). It is the favicon file itself
- * rather than a copy of its paths, so the tab, the sidebar and the desktop app's icons, which are
- * rendered from that same file, cannot drift apart. It keeps its own colours in both themes: it is
- * the brand, not chrome.
+ * The product mark — a P and a live dot (see public/favicon.svg), or the image the user replaced it
+ * with. Paddock's own is the favicon file itself rather than a copy of its paths, so the tab, the
+ * sidebar and the desktop app's icons, which are rendered from that same file, cannot drift apart.
+ * A replacement reaches the tab and the sidebar only: the desktop icons are drawn when the app is
+ * built. Either keeps its own colours in both themes: it is the brand, not chrome.
  * @param {{size?: number}} props
  */
 export function Logo({ size = 20 }) {
-  return <img className="logo" src="/favicon.svg" width={size} height={size} alt="" />;
+  const { logo } = useBranding();
+  // Paddock's tile has its own rounded corners and shadow; someone else's image is drawn as it is.
+  return (
+    <img
+      className={`logo${logo ? ' custom' : ''}`}
+      src={logo?.dataUrl ?? DEFAULT_LOGO}
+      width={size}
+      height={size}
+      alt=""
+    />
+  );
 }

@@ -33,6 +33,8 @@ import * as mcpListener from './mcp-listener.js';
 import * as mcpPrefs from './mcp-preferences.js';
 import * as mcpSessions from './mcp-sessions.js';
 import * as mcpAudit from './mcp-audit.js';
+import * as setupPrefs from './setup-preferences.js';
+import * as branding from './branding.js';
 
 /**
  * Re-exported so `http/` never has to reach past this layer for runtime events. PostgreSQL servers
@@ -1216,6 +1218,43 @@ export async function updateSettings(patch) {
   if (startAtLogin === true) await loginItem.enable();
   if (startAtLogin === false) await loginItem.disable();
   return getSettings();
+}
+
+// --- setup -----------------------------------------------------------------------------------
+
+/**
+ * `needed` is whether the dashboard opens the setup wizard by itself: only on a fresh install, never
+ * finished or skipped and with nothing configured yet. A copy that already has applications was set
+ * up by hand, and an upgrade does not walk it through setup after the fact.
+ */
+const setupView = async () => {
+  const { completedAt } = await setupPrefs.read();
+  const configured = (await applications.listApplications()).length > 0;
+  return { completedAt, needed: !completedAt && !configured };
+};
+
+/** @returns {Promise<{completedAt: string|null, needed: boolean}>} */
+export const getSetup = () => setupView();
+
+/** Finished and skipped end the wizard the same way. */
+export async function completeSetup() {
+  await setupPrefs.complete();
+  return setupView();
+}
+
+// --- branding --------------------------------------------------------------------------------
+
+/** Paddock's mark as the dashboard shows it: the user's image, or null for Paddock's own. */
+export const getBranding = async () => ({ logo: await branding.read() });
+
+/** @param {{dataUrl?: unknown}} input */
+export async function setLogo(input) {
+  return { logo: await branding.set(input.dataUrl) };
+}
+
+export async function resetLogo() {
+  await branding.clear();
+  return getBranding();
 }
 
 // --- terminals -----------------------------------------------------------------------------

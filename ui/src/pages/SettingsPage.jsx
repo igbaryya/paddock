@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import * as api from '../api.js';
 import CopyButton from '../components/CopyButton.jsx';
 import Icon from '../components/Icon.jsx';
+import LogoPicker from '../components/LogoPicker.jsx';
 import McpSettings from '../components/McpSettings.jsx';
 import SettingsGroup from '../components/SettingsGroup.jsx';
 import ShortcutsSettings from '../components/ShortcutsSettings.jsx';
@@ -23,11 +24,12 @@ import ThemeSwitcher from '../components/ThemeSwitcher.jsx';
 import Toolbar from '../components/Toolbar.jsx';
 import UpdatesGroup from '../components/UpdatesGroup.jsx';
 import { Link, paths } from '../router.jsx';
+import { folderName } from '../format.js';
 import { useDesktopUpdates } from '../useDesktopUpdates.js';
 import { useTheme } from '../useTheme.js';
 
 const TABS = [
-  { id: 'general', icon: 'settings', label: 'General', blurb: 'Appearance and updates.' },
+  { id: 'general', icon: 'settings', label: 'General', blurb: 'Appearance, your logo, setup and updates.' },
   { id: 'startup', icon: 'power', label: 'Startup', blurb: 'What starts at login, and in what order.' },
   { id: 'shortcuts', icon: 'keyboard', label: 'Shortcuts', blurb: 'The keys for what you do most.' },
   { id: 'mcp', icon: 'braces', label: 'MCP', blurb: 'Where agents connect, and what they did.' },
@@ -89,6 +91,35 @@ function Appearance() {
     </SettingsGroup>
   );
 }
+
+/**
+ * Unlike the theme, the mark is Paddock's: the manager keeps it, so every dashboard on this copy
+ * shows the same one.
+ */
+const Branding = () => (
+  <SettingsGroup
+    title="Logo"
+    note="Shown in the sidebar and the browser tab. The desktop app's dock and tray icons stay Paddock's."
+  >
+    <LogoPicker />
+  </SettingsGroup>
+);
+
+/** @param {{onRun: () => void}} props */
+const SetupAgain = ({ onRun }) => (
+  <SettingsGroup title="Setup">
+    <div className="group-row">
+      <span className="row-icon"><Icon name="setup" size={14} /></span>
+      <div className="row-text">
+        <span className="row-title">Setup wizard</span>
+        <span className="row-sub">What a fresh install opens with: your logo, MCP, and a first application.</span>
+      </div>
+      <button type="button" className="btn small" onClick={onRun}>
+        Run again
+      </button>
+    </div>
+  </SettingsGroup>
+);
 
 /**
  * One sentence for where the switch stands. The case worth spelling out is "on, but not in effect":
@@ -219,9 +250,6 @@ function Startup({ startAtLogin, unreadable, saving, onStartAtLogin, application
   );
 }
 
-/** The last segment of an install path — the checkout's name, which is what tells two copies apart. */
-const folderName = (directory) => directory.split(/[\\/]/).filter(Boolean).pop() ?? directory;
-
 /**
  * The facts about this copy. "Runs" is shown only when the entry is stale: otherwise it is exactly
  * this copy's node and install folder, listed above.
@@ -294,11 +322,19 @@ function SettingsNav({ tab }) {
 
 /**
  * @param {{tab: string, returnTo: string, applications: object[], isBusy: (id: string) => boolean,
- *          onAutoStart: (applicationId: string, autoStart: boolean) => void,
+ *          onAutoStart: (applicationId: string, autoStart: boolean) => void, onRunSetup: () => void,
  *          mcp: {busy: boolean, live: object, onAction: (action: string, body?: object) => Promise<void>}}} props
  *   `returnTo` is the page Settings was opened from, which its back button leads to
  */
-export default function SettingsPage({ tab = 'general', returnTo, applications, isBusy, onAutoStart, mcp }) {
+export default function SettingsPage({
+  tab = 'general',
+  returnTo,
+  applications,
+  isBusy,
+  onAutoStart,
+  onRunSetup,
+  mcp,
+}) {
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -358,6 +394,8 @@ export default function SettingsPage({ tab = 'general', returnTo, applications, 
           {current.id === 'general' && (
             <>
               <Appearance />
+              <Branding />
+              <SetupAgain onRun={onRunSetup} />
               {updates && <UpdatesGroup updates={updates} />}
             </>
           )}

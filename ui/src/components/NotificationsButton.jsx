@@ -4,9 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon.jsx';
-import { Link, paths } from '../router.jsx';
-
-const timeFormat = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+import NotificationRow from './NotificationRow.jsx';
 
 /**
  * @param {{notifications: ReturnType<typeof import('../useNotifications.js').useNotifications>}} props
@@ -74,30 +72,9 @@ export default function NotificationsButton({ notifications }) {
             <p className="notifications-empty">Nothing needs attention.</p>
           ) : (
             <ul className="notifications-list">
-              {items.map((item) => {
-                const body = (
-                  <>
-                    <span className={`notifications-icon is-${item.kind}`} aria-hidden="true">
-                      <Icon name={item.kind === 'update' ? 'arrow-down' : 'alert'} size={14} />
-                    </span>
-                    <span className="notifications-copy">
-                      <span className="notifications-title">{item.title}</span>
-                      {item.detail && <span className="notifications-detail">{item.detail}</span>}
-                    </span>
-                    <time className="notifications-time" dateTime={new Date(item.ts).toISOString()}>
-                      {timeFormat.format(item.ts)}
-                    </time>
-                  </>
-                );
-                const to = item.applicationId ? paths.application(item.applicationId) : paths.settings();
-                return (
-                  <li key={item.id}>
-                    <Link to={to} className="notifications-row" onClick={() => setOpen(false)}>
-                      {body}
-                    </Link>
-                  </li>
-                );
-              })}
+              {items.map((item) => (
+                <NotificationRow key={item.id} item={item} onOpen={() => setOpen(false)} />
+              ))}
             </ul>
           )}
         </div>

@@ -76,6 +76,31 @@ export const describePublicIp = (network) => {
   return { address: publicIp.address, value: publicIp.address, note: `Public IP, as Cloudflare saw it at ${at}` };
 };
 
+/** An MCP client as it named itself, which an agent that never said is not. */
+export const clientName = (client) => (client ? `${client.name} ${client.version}` : 'Unidentified client');
+
+/** @param {string} iso @param {number} now */
+export const ago = (iso, now) => `${formatUptime(now - Date.parse(iso))} ago`;
+
+/** @param {string} iso */
+export const formatTime = (iso) => {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? '—' : at.toLocaleTimeString();
+};
+
+/**
+ * The last segment of a path — a checkout's folder name, which is what tells two copies apart and
+ * what a repository is usually called. Either separator, since the manager may be on Windows.
+ * @param {string} directory
+ */
+export const folderName = (directory) => directory.split(/[\\/]/).filter(Boolean).pop() ?? directory;
+
+/** The MCP listener's state in a few words, from a view of /api/mcp. */
+export const describeMcpListener = (mcp) => {
+  if (mcp.running) return `Running on port ${mcp.boundPort ?? mcp.port}`;
+  return mcp.configured ? 'Stopped' : 'Not installed yet';
+};
+
 /** @param {object} process a ProcessView @returns {string|null} null when it never exited */
 export const exitSummary = (process) => {
   if (process.exitSignal) return `exit on ${process.exitSignal}`;

@@ -101,6 +101,13 @@ export default function Sidebar({
 
       <ul className="nav-list">
         <NavItem
+          to={paths.dashboard()}
+          icon="dashboard"
+          label="Dashboard"
+          active={route.name === 'dashboard'}
+          collapsed={collapsed}
+        />
+        <NavItem
           to={paths.overview()}
           icon="grid"
           label="Applications"
@@ -164,7 +171,7 @@ export default function Sidebar({
           </Link>
         )}
         <div className="sidebar-brand">
-          <Link to={paths.overview()} className="brand" title={collapsed ? 'Paddock' : undefined}>
+          <Link to={paths.dashboard()} className="brand" title={collapsed ? 'Paddock' : undefined}>
             <Logo size={24} />
             <span className="brand-name">Paddock</span>
           </Link>

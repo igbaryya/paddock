@@ -403,6 +403,13 @@ textarea {
   box-shadow: var(--shadow-1);
 }
 
+/* Someone else's image is not drawn on Paddock's tile: no corners, no shadow, never stretched. */
+.logo.custom {
+  border-radius: 0;
+  box-shadow: none;
+  object-fit: contain;
+}
+
 .brand-name {
   font-size: 14px;
   font-weight: 650;
@@ -3068,7 +3075,7 @@ p.card-processes {
   border-top: 0;
 }
 
-.network-facts .fact code {
+.fact.address-fact code {
   flex: none;
   font-weight: 600;
 }
@@ -3093,6 +3100,141 @@ p.card-processes {
 .interface-addresses code,
 .network-table td.mono {
   font-size: 11.5px;
+}
+
+/* --- dashboard ------------------------------------------------------------------------------- */
+
+/* Two columns: the wide one for lists that need the width, the narrow one for summaries. A row's
+   panels share its height, so the page reads as a grid rather than a ragged stack. */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.dashboard-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Each grows into the row's spare height but never shrinks below its content. */
+.dashboard-stack > .dashboard-section {
+  flex: 1 0 auto;
+}
+
+.dashboard-section .empty-inline {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.dashboard-section .empty-inline p {
+  margin: 0;
+}
+
+.dashboard-list,
+.dashboard-agents {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-1) 6px 6px;
+}
+
+.dashboard-app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 84px 72px;
+  gap: var(--space-3);
+  align-items: center;
+  min-height: 38px;
+  padding: 3px 10px;
+  border-radius: var(--radius-xs);
+}
+
+.dashboard-app:nth-child(even) {
+  background: var(--zebra);
+}
+
+.dashboard-app .status {
+  justify-self: start;
+}
+
+.dashboard-app-web {
+  justify-self: end;
+}
+
+.dashboard-rows > * + * {
+  border-top: 1px solid var(--separator);
+}
+
+.dashboard-agent {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+  min-height: 30px;
+  padding: 0 8px;
+}
+
+.dashboard-agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* Zero specificity, so a gauge's tone class (`meter-warn`) always wins over this default. */
+:where(.dashboard-gauge) {
+  --meter-color: var(--ok);
+}
+
+.dashboard-gauge {
+  padding: 10px 14px;
+}
+
+.dashboard-gauge + .dashboard-gauge {
+  border-top: 1px solid var(--separator);
+}
+
+.dashboard-gauge-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.dashboard-gauge-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.dashboard-gauge-value {
+  font-size: 18px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-gauge:is(.meter-warn, .meter-danger) .dashboard-gauge-value {
+  color: var(--meter-color);
+}
+
+.dashboard-gauge-graph {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  margin: 4px 0;
+}
+
+.dashboard-gauge-detail {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+@media (max-width: 1100px) {
+  .dashboard-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .port-row:nth-child(even of .port-row) > td,
@@ -4121,10 +4263,6 @@ p.card-processes {
   overflow-wrap: anywhere;
 }
 
-.mcp-wizard .form-actions {
-  justify-content: flex-end;
-}
-
 .fact {
   display: grid;
   grid-template-columns: 76px minmax(0, 1fr);
@@ -4605,6 +4743,95 @@ p.card-processes {
   box-shadow: inset 2px 0 0 var(--danger);
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+
+/* --- setup wizard ---------------------------------------------------------------------------- */
+
+/* The steps, the current one's body and its buttons: one column, padded the way a form sheet is. */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: 2px 22px 0;
+}
+
+/* A step's form is already inside that padding; the sheet's own form padding would double it. */
+.setup form {
+  padding: 0;
+}
+
+.setup-steps {
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.setup-step {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 10px;
+  border-radius: var(--radius);
+  background: var(--control);
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.setup-step[aria-current='step'] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Focused only so a screen reader announces the step; the highlight above already marks it. */
+.setup-step:focus {
+  outline: none;
+}
+
+.setup-step-index {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--separator);
+  font-size: 11px;
+}
+
+.setup-step[aria-current='step'] .setup-step-index,
+.setup-step.done .setup-step-index {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+}
+
+.setup-step-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-lead {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+/* Skip leaves setup altogether, so it stands apart from the step's own buttons. */
+.setup-skip {
+  margin-right: auto;
+}
+
+/* The mark as the sidebar shows it, on a row of its own in Settings and in the wizard. */
+.logo-preview {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
 }
 
 /* --- fields ---------------------------------------------------------------------------------- */

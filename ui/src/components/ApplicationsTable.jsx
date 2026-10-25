@@ -12,6 +12,7 @@ import AppIcon from './AppIcon.jsx';
 import Icon from './Icon.jsx';
 import IconButton from './IconButton.jsx';
 import StatusDot from './StatusDot.jsx';
+import WebLink from './WebLink.jsx';
 import { ALIVE, exitSummary, formatUptime, uptimeOf } from '../format.js';
 import { Link, paths } from '../router.jsx';
 import { useSecondsTick } from '../useSecondsTick.js';
@@ -39,27 +40,6 @@ function readExpanded() {
 /** Every port any of its services holds, once each, in order. */
 const portsOf = (application) =>
   [...new Set(application.processes.flatMap((process) => process.ports ?? []))].sort((a, b) => a - b);
-
-/**
- * A service the manager found answering with a web page, opened in the user's browser — the desktop
- * window sends any new-window link there.
- * @param {{web: {url: string, port: number, title: string|null}, name: string}} props
- */
-function WebLink({ web, name }) {
-  const what = web.title ? `${name} (“${web.title}”)` : name;
-  return (
-    <a
-      className="btn small web-link"
-      href={web.url}
-      target="_blank"
-      rel="noreferrer"
-      title={`Open ${what} at ${web.url.replace(/\/$/, '')} in your browser`}
-    >
-      <Icon name="globe" size={13} />
-      Open
-    </a>
-  );
-}
 
 /** @param {{ports: number[]}} props */
 function PortChips({ ports }) {

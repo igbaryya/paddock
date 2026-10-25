@@ -4,6 +4,7 @@
  */
 import { useEffect, useId, useState } from 'react';
 import * as api from '../api.js';
+import { describeMcpListener } from '../format.js';
 import AgentActivity from './AgentActivity.jsx';
 import CopyButton from './CopyButton.jsx';
 import Icon from './Icon.jsx';
@@ -18,6 +19,21 @@ const ErrorNotice = ({ message }) => (
     <Icon name="alert" />
     <span>{message}</span>
   </p>
+);
+
+/** The address to give an agent, copyable. The setup wizard's MCP step shows the same row. */
+export const McpUrlRow = ({ url }) => (
+  <div className="group-row">
+    <span className="row-icon muted"><Icon name="globe" size={14} /></span>
+    <div className="row-text">
+      <span className="row-title">URL</span>
+      <span className="row-sub">Give this to your agent.</span>
+    </div>
+    <div className="command-well address settings-url">
+      <code>{url}</code>
+      <CopyButton text={url} label="Copy MCP URL" />
+    </div>
+  </div>
 );
 
 const formatWhen = (iso) => {
@@ -88,13 +104,7 @@ export default function McpSettings({ busy, live, onAction }) {
           <span className="row-icon"><Icon name="braces" size={14} /></span>
           <div className="row-text">
             <span className="row-title">MCP server</span>
-            <span className="row-sub">
-              {state.running
-                ? `Running on port ${state.boundPort ?? state.port}`
-                : state.configured
-                  ? 'Stopped'
-                  : 'Not installed yet'}
-            </span>
+            <span className="row-sub">{describeMcpListener(state)}</span>
           </div>
           <StatusDot status={status} showLabel />
           <span className="button-group small" role="group" aria-label="MCP lifecycle">
@@ -120,19 +130,7 @@ export default function McpSettings({ busy, live, onAction }) {
           </span>
         </div>
 
-        {state.url && (
-          <div className="group-row">
-            <span className="row-icon muted"><Icon name="globe" size={14} /></span>
-            <div className="row-text">
-              <span className="row-title">URL</span>
-              <span className="row-sub">Give this to your agent.</span>
-            </div>
-            <div className="command-well address settings-url">
-              <code>{state.url}</code>
-              <CopyButton text={state.url} label="Copy MCP URL" />
-            </div>
-          </div>
-        )}
+        {state.url && <McpUrlRow url={state.url} />}
 
         <div className="group-row">
           <span className="row-icon muted"><Icon name="ports" size={14} /></span>

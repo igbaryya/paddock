@@ -9,7 +9,14 @@ import { BrowserWindow, app } from 'electron';
 import { APP_ICON, ASSETS_DIR } from './assets-dir.js';
 import { pageBackground } from './window.js';
 
-const PAGE = path.join(ASSETS_DIR, 'splash.html');
+/**
+ * The renderer reads this page itself, and its file:// cannot see into the app's archive: with the
+ * grantFileProtocolExtraPrivileges fuse off it has Chromium's plain file loader, not Electron's asar
+ * one. So a packaged app keeps the page and the icon it shows unpacked beside the archive.
+ */
+const PAGE_DIR = app.isPackaged ? path.join(process.resourcesPath, 'app.asar.unpacked', 'assets') : ASSETS_DIR;
+
+const PAGE = path.join(PAGE_DIR, 'splash.html');
 
 /** @type {BrowserWindow|null} */
 let splash = null;

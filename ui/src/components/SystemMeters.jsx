@@ -5,6 +5,9 @@
  * CPU and memory move second to second, so each gets a trace of the last couple of minutes; disk
  * barely moves in that time, and a level bar says more about it than a flat line would. The exact
  * figures are in each row's tooltip.
+ *
+ * The trace, the bar, the tone and the wording are exported for the dashboard, which shows the same
+ * readings larger and must not describe them differently.
  */
 import Icon from './Icon.jsx';
 import { formatBytes } from '../format.js';
@@ -14,7 +17,7 @@ import { MAX_SYSTEM_SAMPLES } from '../useLiveState.js';
 const WARN_AT = 85;
 const DANGER_AT = 95;
 
-const toneOf = (percent) => {
+export const toneOf = (percent) => {
   if (!Number.isFinite(percent)) return 'unknown';
   if (percent >= DANGER_AT) return 'danger';
   if (percent >= WARN_AT) return 'warn';
@@ -28,7 +31,7 @@ const VIEW_HEIGHT = 16;
  * instead of stretching to fit however many there are so far.
  * @param {{values: (number|null)[]}} props percentages, oldest first
  */
-function Sparkline({ values }) {
+export function Sparkline({ values }) {
   const step = 100 / (MAX_SYSTEM_SAMPLES - 1);
   const points = values
     .map((value, i) => [100 - (values.length - 1 - i) * step, value])
@@ -44,7 +47,7 @@ function Sparkline({ values }) {
 }
 
 /** @param {{percent: number|null}} props */
-function LevelBar({ percent }) {
+export function LevelBar({ percent }) {
   const width = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
   return (
     <span className="level-bar" aria-hidden="true">
@@ -78,18 +81,18 @@ function Meter({ icon, label, percent, detail, children }) {
   );
 }
 
-function cpuDetail(cpu) {
+export function cpuDetail(cpu) {
   if (!Number.isFinite(cpu?.percent)) return 'CPU: measuring…';
   const load = cpu.loadAverage ? ` · load ${cpu.loadAverage.join(' ')}` : '';
   return `CPU ${cpu.percent}% across ${cpu.cores} cores${load}`;
 }
 
-function memoryDetail(memory) {
+export function memoryDetail(memory) {
   if (!memory) return 'Memory: could not be read';
   return `Memory ${formatBytes(memory.used)} of ${formatBytes(memory.total)} in use`;
 }
 
-function diskDetail(disk) {
+export function diskDetail(disk) {
   if (!disk) return 'Disk: could not be read';
   return `Disk ${formatBytes(disk.free)} free of ${formatBytes(disk.total)} (${disk.path})`;
 }

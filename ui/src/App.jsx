@@ -15,6 +15,7 @@ import { useFavicons } from './useFavicons.js';
 import { useSidebar } from './useSidebar.js';
 import { useNotifications } from './useNotifications.js';
 import { useDesktopUpdates } from './useDesktopUpdates.js';
+import { refreshBranding } from './useBranding.js';
 import { ToolbarCornerContext } from './components/Toolbar.jsx';
 import { Link, navigate, paths, useRoute } from './router.jsx';
 import Sidebar from './components/Sidebar.jsx';
@@ -28,8 +29,9 @@ import PostgresForm from './components/PostgresForm.jsx';
 import OverviewPage from './pages/OverviewPage.jsx';
 import ApplicationPage from './pages/ApplicationPage.jsx';
 import PortsPage from './pages/PortsPage.jsx';
+import DashboardPage from './pages/DashboardPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
-import McpSetupWizard from './components/McpSetupWizard.jsx';
+import SetupWizard from './components/SetupWizard.jsx';
 
 /**
  * `updateProcess` flags the process whose configuration changed under a running instance. The
@@ -78,10 +80,7 @@ export default function App() {
   const [busy, setBusy] = useState(() => new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteIntent, setPaletteIntent] = useState(null);
-  const [mcpWizardOpen, setMcpWizardOpen] = useState(false);
-  // "Not now" holds for this visit: the wizard is offered on every reconnect, and someone who only
-  // wants the process manager must not be asked again each time the stream blips.
-  const mcpWizardDismissedRef = useRef(false);
+  const [setupOpen, setSetupOpen] = useState(false);
 
   /**
    * Run one manager command. `key` is the application or process the command belongs to, so only
@@ -109,11 +108,15 @@ export default function App() {
     [reload]
   );
 
+  // On every (re)connect, not once: a manager restarted underneath this page may have a new mark,
+  // and setup finished from another browser must not open here. A skip is recorded by the manager,
+  // so a stream that blips never asks twice.
   useEffect(() => {
-    if (connection !== 'live' || mcpWizardDismissedRef.current) return;
-    api.getMcp().then(
-      (state) => {
-        if (!state.configured) setMcpWizardOpen(true);
+    if (connection !== 'live') return;
+    refreshBranding();
+    api.getSetup().then(
+      (setup) => {
+        if (setup.needed) setSetupOpen(true);
       },
       () => {}
     );
@@ -128,12 +131,6 @@ export default function App() {
       return null;
     });
 
-  const installMcp = (port) =>
-    run('mcp', async () => {
-      await api.configureMcp({ port });
-      setMcpWizardOpen(false);
-    });
-
   const runApplication = async (applicationId, action) => {
     const result = await run(applicationId, () => api.applicationAction(applicationId, action));
     // Only where something was supposed to come up: a process left `crashed` reports `ok: false`,
@@ -141,6 +138,33 @@ export default function App() {
     if (action === 'stop') return;
     const summary = failureSummary(result);
     if (summary) setActionError(summary);
+  };
+
+  /** Finished or skipped, setup ends the same way. Not through `run`: its toast sits under the wizard. */
+  const finishSetup = async () => {
+    await api.completeSetup();
+    setSetupOpen(false);
+  };
+
+  /**
+   * The wizard's first application: the application and its one process, as one step. A process the
+   * manager refuses takes the new application with it, so the corrected retry is not then refused
+   * for a name the empty leftover still holds.
+   */
+  const createFirstApplication = async ({ name, repositoryPath, command }, start) => {
+    const created = await api.createApplication({ name, kind: 'processes' });
+    try {
+      await api.addProcess(created.id, { name, repositoryPath, command });
+    } catch (err) {
+      await api.deleteApplication(created.id).catch(() => {});
+      throw err;
+    }
+    // Best effort: the application now exists, and that alone keeps setup from opening again.
+    await api.completeSetup().catch(() => {});
+    setSetupOpen(false);
+    await reload();
+    navigate(paths.application(created.id));
+    if (start) runApplication(created.id, 'start');
   };
 
   const runProcess = (applicationId, processId, action) =>
@@ -247,7 +271,7 @@ export default function App() {
 
   // Settings is a page of its own, without the rail; leaving it goes back to wherever it was opened.
   const inSettings = route.name === 'settings';
-  const settingsReturnRef = useRef(paths.overview());
+  const settingsReturnRef = useRef(paths.dashboard());
   if (!inSettings) settingsReturnRef.current = window.location.pathname;
   const closeSettings = () => navigate(settingsReturnRef.current);
 
@@ -257,6 +281,7 @@ export default function App() {
     newApplication: () => openApplicationForm(),
     toggleSidebar: !inSettings && (() => sidebar.toggle()),
     showShortcuts: () => navigate(paths.settings('shortcuts')),
+    goDashboard: () => navigate(paths.dashboard()),
     goOverview: () => navigate(paths.overview()),
     goPorts: () => navigate(paths.ports()),
     goSettings: () => navigate(paths.settings()),
@@ -276,7 +301,7 @@ export default function App() {
   onKeyDownRef.current = (event) => {
     const { bindings, recording } = getShortcuts();
     if (recording || event.repeat) return;
-    const blocked = paletteOpen || dialog || mcpWizardOpen || isTypingTarget(event.target);
+    const blocked = paletteOpen || dialog || setupOpen || isTypingTarget(event.target);
 
     // Whatever is on top of Settings — the palette, a dialog — takes Escape instead.
     if (inSettings && event.key === 'Escape' && !blocked) {
@@ -341,6 +366,21 @@ export default function App() {
 
       <ToolbarCornerContext.Provider value={notifications}>
       <main className="main">
+        {route.name === 'dashboard' && (
+          <DashboardPage
+            applications={applications}
+            loaded={live.loaded}
+            unreachable={Boolean(live.error)}
+            ports={ports}
+            system={live.system}
+            network={live.network}
+            agents={live.mcp}
+            problems={notifications.items}
+            onRetry={() => reload()}
+            onCreate={() => openApplicationForm()}
+          />
+        )}
+
         {route.name === 'overview' && (
           <OverviewPage
             applications={applications}
@@ -416,6 +456,7 @@ export default function App() {
             onAutoStart={(applicationId, autoStart) =>
               run(applicationId, () => api.updateApplication(applicationId, { autoStart }))
             }
+            onRunSetup={() => setSetupOpen(true)}
           />
         )}
 
@@ -423,7 +464,7 @@ export default function App() {
           <EmptyState
             icon="alert"
             title="Page not found"
-            action={<Link to={paths.overview()} className="btn primary">Back to applications</Link>}
+            action={<Link to={paths.dashboard()} className="btn primary">Back to the dashboard</Link>}
           >
             That address does not match anything in this dashboard.
           </EmptyState>
@@ -470,16 +511,7 @@ export default function App() {
         onClose={() => setPaletteOpen(false)}
       />
 
-      {mcpWizardOpen && (
-        <McpSetupWizard
-          busy={busy.has('mcp')}
-          onSubmit={installMcp}
-          onDismiss={() => {
-            mcpWizardDismissedRef.current = true;
-            setMcpWizardOpen(false);
-          }}
-        />
-      )}
+      {setupOpen && <SetupWizard onFinish={finishSetup} onCreateApplication={createFirstApplication} />}
     </div>
   );
 }

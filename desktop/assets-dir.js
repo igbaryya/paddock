@@ -1,6 +1,7 @@
 /**
  * Where the main process's own files live: the tray images, the app icon and the splash page, all
- * rendered or written into assets/ and packed into the app's archive with the code that loads them.
+ * rendered or written into assets/ and packed into the app's archive with the code that loads them —
+ * except the splash page and its icon, unpacked beside it (see splash.js for why).
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

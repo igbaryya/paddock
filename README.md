@@ -68,7 +68,13 @@ its enabled processes only, and only once Paddock holds its port and has reaped 
 previous run. The dashboard is usable while they come up, and Paddock logs one line per application
 naming anything that did not start.
 
-Then: **New application** → **Add process** → point it at a repository, give it `npm run dev` →
+A fresh install opens on a three-step setup: your own logo for the sidebar and the browser tab, the
+MCP URL with one-click setup for Cursor and Claude Code, and a first application — pick a repository,
+take a command from its `package.json` scripts, and it is created and started. Every step can be
+skipped, and **Settings → General** runs it again or changes the logo. A copy that already has
+applications never opens it by itself.
+
+Without it: **New application** → **Add process** → point it at a repository, give it `npm run dev` →
 **Start**.
 
 ## Desktop app
@@ -197,11 +203,12 @@ Electron's.
 
 ## The dashboard
 
-Four routes, all real URLs — a project page is worth pasting into a ticket, and survives a refresh.
+Five routes, all real URLs — a project page is worth pasting into a ticket, and survives a refresh.
 
 | Route | |
 | --- | --- |
-| `/` | Every application as a card: status, its processes, the ports it holds |
+| `/` | The dashboard: applications worst-first, recent crashes, CPU/memory/disk, private and public IP, and what agents are doing over MCP — each linking to where it is acted on |
+| `/applications` | Every application as a row: status, its processes, the ports it holds |
 | `/applications/:id` | One application in full — controls, process detail, live logs, an interactive terminal, and a SQL console for PostgreSQL |
 | `/ports` | Every listening port on the machine, filterable, with its owner |
 | `/settings` | Start Paddock at login, which applications start with it, and where this copy lives |

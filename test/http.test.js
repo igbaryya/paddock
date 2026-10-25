@@ -588,6 +588,31 @@ test('PATCH /api/settings refuses a startAtLogin that is not a boolean, and an e
   assert.equal(empty.json().startAtLogin.enabled, before.startAtLogin.enabled);
 });
 
+// The rules behind both are pinned in setup.test.js; this is the wiring and the error envelope.
+test('the setup and logo routes: complete setup, set a logo, refuse a bad one, reset it', async () => {
+  // With an application in it, this copy is not a fresh install whatever ran before.
+  await createApplication('setup');
+  const setup = await api('/api/setup');
+  assert.equal(setup.status, 200);
+  assert.deepEqual(setup.json(), { completedAt: null, needed: false });
+  const completed = await postJson('/api/setup/complete', {});
+  assert.equal(completed.status, 200);
+  assert.ok(completed.json().completedAt);
+
+  const svg = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>').toString('base64')}`;
+  const set = await putJson('/api/branding/logo', { dataUrl: svg });
+  assert.equal(set.status, 200, set.text);
+  assert.equal((await api('/api/branding')).json().logo.dataUrl, svg);
+
+  const refused = await putJson('/api/branding/logo', { dataUrl: 'logo.png' });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.json().error.code, 'validation_error');
+
+  const reset = await api('/api/branding/logo', { method: 'DELETE' });
+  assert.equal(reset.status, 200);
+  assert.deepEqual(reset.json(), { logo: null });
+});
+
 test('GET /api/health reports ok, names the service, and gives the server pid', async () => {
   const res = await api('/api/health');
   assert.equal(res.status, 200);

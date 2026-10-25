@@ -22,7 +22,7 @@ export const nameError = (value) => {
 /**
  * @param {{label: string, value: string, onChange: (value: string) => void, error?: string|null,
  *          hint?: string, rows?: number, placeholder?: string, spellCheck?: boolean,
- *          mono?: boolean, action?: React.ReactNode, type?: 'text'|'password'}} props `action` sits
+ *          mono?: boolean, action?: React.ReactNode, type?: 'text'|'password'|'number'}} props `action` sits
  *   to the right of the control, for a field that has something to offer beyond typing into it
  */
 export default function Field({

@@ -7,96 +7,15 @@
  * opens to its arguments and its error, so "it restarted the backend" can be checked against what it
  * was actually asked to do. Nothing here can change or clear the audit.
  */
-import { useEffect, useMemo, useState } from 'react';
-import * as api from '../api.js';
-import { formatUptime } from '../format.js';
+import { useState } from 'react';
+import { ago, clientName, formatTime } from '../format.js';
+import { useCalls, useSessions } from '../useAgentActivity.js';
 import Icon from './Icon.jsx';
 import IconButton from './IconButton.jsx';
 import SettingsGroup from './SettingsGroup.jsx';
 import StatusDot from './StatusDot.jsx';
 
 const CALL_LIMIT = 200;
-/** "Active" is decided on the server at read time, so an idle agent needs a re-read to be shown idle. */
-const SESSIONS_REFRESH_MS = 60_000;
-
-const clientName = (client) => (client ? `${client.name} ${client.version}` : 'Unidentified client');
-
-const ago = (iso, now) => `${formatUptime(now - Date.parse(iso))} ago`;
-
-const formatTime = (iso) => {
-  const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? '—' : at.toLocaleTimeString();
-};
-
-/**
- * The sessions: fetched, re-read every minute, and replaced by the live list whenever one is pushed.
- * @param {object[]|null} live
- */
-function useSessions(live) {
-  const [sessions, setSessions] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = () =>
-      api.listMcpSessions(controller.signal).then(
-        (next) => {
-          setSessions(next);
-          setError(null);
-        },
-        (err) => {
-          if (!controller.signal.aborted) setError(err.message);
-        }
-      );
-    load();
-    const timer = setInterval(load, SESSIONS_REFRESH_MS);
-    return () => {
-      clearInterval(timer);
-      controller.abort();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (live) setSessions(live);
-  }, [live]);
-
-  return { sessions, error };
-}
-
-/**
- * The recorded calls for the current filter, with the live ones that arrived after them on top.
- * @param {string|null} sessionId @param {object[]} liveCalls
- */
-function useCalls(sessionId, liveCalls) {
-  const [recorded, setRecorded] = useState(null);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setRecorded(null);
-    api.listMcpCalls({ sessionId: sessionId ?? undefined, limit: CALL_LIMIT }, controller.signal).then(
-      (next) => {
-        setRecorded(next);
-        setError(null);
-      },
-      (err) => {
-        if (!controller.signal.aborted) setError(err.message);
-      }
-    );
-    return () => controller.abort();
-  }, [sessionId]);
-
-  const calls = useMemo(() => {
-    if (!recorded) return null;
-    const newest = recorded[0]?.seq ?? -Infinity;
-    const fresh = liveCalls.filter(
-      (call) => call.seq > newest && (!sessionId || call.sessionId === sessionId)
-    );
-    return [...fresh, ...recorded].slice(0, CALL_LIMIT);
-  }, [recorded, liveCalls, sessionId]);
-
-  return { calls, error };
-}
 
 /** @param {{session: object, now: number, filtered: boolean, onFilter: () => void}} props */
 function SessionRow({ session, now, filtered, onFilter }) {
@@ -124,8 +43,11 @@ function SessionRow({ session, now, filtered, onFilter }) {
   );
 }
 
-/** @param {{call: object, sessions: object[]}} props */
-function CallRow({ call, sessions }) {
+/**
+ * Exported for the dashboard's recent calls, which open to the same detail.
+ * @param {{call: object, sessions: object[]}} props
+ */
+export function CallRow({ call, sessions }) {
   const [open, setOpen] = useState(false);
   const client = call.client ?? sessions.find((session) => session.id === call.sessionId)?.client ?? null;
   return (
@@ -152,7 +74,7 @@ function CallRow({ call, sessions }) {
 export default function AgentActivity({ live }) {
   const [sessionFilter, setSessionFilter] = useState(null);
   const { sessions, error: sessionsError } = useSessions(live.sessions);
-  const { calls, error: callsError } = useCalls(sessionFilter, live.calls);
+  const { calls, error: callsError } = useCalls({ sessionId: sessionFilter, limit: CALL_LIMIT }, live.calls);
   const now = Date.now();
   const known = sessions ?? [];
   const filteredSession = known.find((session) => session.id === sessionFilter);

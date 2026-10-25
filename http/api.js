@@ -142,6 +142,14 @@ const routes = [
   route('GET', '/api/settings', () => service.getSettings()),
   route('PATCH', '/api/settings', async ({ req }) => service.updateSettings(await readJsonBody(req))),
 
+  // Dashboard-only, like Settings: the first-run wizard and the mark in the sidebar are about this
+  // screen, and an agent has nothing to set up or look at in either.
+  route('GET', '/api/setup', () => service.getSetup()),
+  route('POST', '/api/setup/complete', () => service.completeSetup()),
+  route('GET', '/api/branding', () => service.getBranding()),
+  route('PUT', '/api/branding/logo', async ({ req }) => service.setLogo(await readJsonBody(req))),
+  route('DELETE', '/api/branding/logo', () => service.resetLogo()),
+
   route('GET', '/api/ports', ({ url }) =>
     service.listPorts({ force: url.searchParams.get('force') === '1' })),
   route('GET', '/api/ports/:port', ({ params }) => service.getPort(portParam(params.port))),

@@ -143,6 +143,9 @@ export const FAVICON_DIR = path.join(DATA_DIR, 'favicons');
 /** Which process was seen connecting to which port — a cache relearned while services run, and safe to delete by hand. */
 export const LINKS_FILE = path.join(DATA_DIR, 'links.json');
 
+/** The image that replaces Paddock's mark in the dashboard; deleting it brings the mark back. */
+export const LOGO_FILE = path.join(DATA_DIR, 'logo.json');
+
 export const LOG_BUFFER_LINES = intFromEnv('PADDOCK_LOG_BUFFER_LINES', 2_000);
 
 export const LOG_FILE_MAX_BYTES = intFromEnv('PADDOCK_LOG_FILE_MAX_BYTES', 5_242_880);

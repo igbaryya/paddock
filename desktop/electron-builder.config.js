@@ -63,6 +63,8 @@ export default {
   extraMetadata: { version: serverPackage.version },
   directories: { output: 'dist', buildResources: 'build' },
   files: ['package.json', '*.js', 'preload.cjs', '!electron-builder.config.js', 'assets/**'],
+  // The splash page and its icon are read by a renderer, which cannot see into the archive (splash.js).
+  asarUnpack: ['assets/splash.html', 'assets/icon.png'],
   // node_modules is its own entry because electron-builder drops a node_modules at the root of any
   // source. The root package has no devDependencies, so what is installed there is the runtime.
   extraResources: [

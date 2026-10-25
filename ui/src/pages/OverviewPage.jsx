@@ -1,41 +1,13 @@
 /**
- * The landing page: every configured application as a row of a table, each opening to its services,
- * under a one-line read on the machine. This is the screen someone leaves open, so it answers "is
- * anything broken" from across the desk.
+ * Every configured application as a row of a table, each opening to its services, under a one-line
+ * read on them. The dashboard summarises; this is where each application is operated.
  */
 import ApplicationsTable from '../components/ApplicationsTable.jsx';
 import EmptyState from '../components/EmptyState.jsx';
 import Icon from '../components/Icon.jsx';
+import NotLoaded from '../components/NotLoaded.jsx';
 import Stat from '../components/Stat.jsx';
 import Toolbar from '../components/Toolbar.jsx';
-
-/**
- * Before the first list lands there is nothing to count and nothing to offer: an unreachable manager
- * is an outage, and saying "nothing configured" to it would send someone to recreate what they have.
- * @param {{unreachable: boolean, onRetry: () => void}} props
- */
-function NotLoaded({ unreachable, onRetry }) {
-  if (!unreachable) {
-    return (
-      <p className="empty-inline" role="status">
-        Loading…
-      </p>
-    );
-  }
-  return (
-    <EmptyState
-      icon="alert"
-      title="Can't reach Paddock"
-      action={
-        <button type="button" className="btn primary" onClick={onRetry}>
-          Retry
-        </button>
-      }
-    >
-      The dashboard is up but the manager behind it is not answering. Your applications are unchanged.
-    </EmptyState>
-  );
-}
 
 /**
  * @param {{applications: object[], loaded: boolean, unreachable: boolean,

@@ -16,6 +16,7 @@ export const SHORTCUT_ACTIONS = [
   { id: 'newApplication', group: 'General', label: 'New application', defaultCombo: 'Mod+N' },
   { id: 'toggleSidebar', group: 'General', label: 'Collapse or expand the sidebar', defaultCombo: 'Mod+B' },
   { id: 'showShortcuts', group: 'General', label: 'Keyboard shortcuts', defaultCombo: 'Mod+/' },
+  { id: 'goDashboard', group: 'Go to', label: 'Dashboard', defaultCombo: 'Mod+Shift+D' },
   { id: 'goOverview', group: 'Go to', label: 'Applications', defaultCombo: 'Mod+Shift+O' },
   { id: 'goPorts', group: 'Go to', label: 'Local ports', defaultCombo: 'Mod+Shift+P' },
   { id: 'goSettings', group: 'Go to', label: 'Settings', defaultCombo: 'Mod+,' },

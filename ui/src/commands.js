@@ -37,11 +37,22 @@ export function buildCommands({
   const commands = [];
 
   commands.push({
+    id: 'nav-dashboard',
+    title: 'Dashboard',
+    subtitle: 'Applications, problems, the machine, the network and agents at a glance.',
+    icon: 'dashboard',
+    keywords: 'home summary status health overview',
+    group: 'Pages',
+    shortcut: 'goDashboard',
+    run: () => navigate(paths.dashboard()),
+  });
+
+  commands.push({
     id: 'nav-overview',
     title: 'Applications',
-    subtitle: 'Overview of all applications and their status.',
+    subtitle: 'Every application and its services, with their controls.',
     icon: 'grid',
-    keywords: 'home overview dashboard',
+    keywords: 'apps list table',
     group: 'Pages',
     shortcut: 'goOverview',
     run: () => navigate(paths.overview()),
