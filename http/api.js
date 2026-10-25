@@ -149,6 +149,10 @@ const routes = [
 
   // The first fill of the sidebar's meters; every reading after it arrives on /api/events.
   route('GET', '/api/system', () => service.getSystemStats()),
+  // The first fill of the network panel and the sidebar's addresses; a change after it arrives on
+  // /api/events, and `force` is the Refresh control asking for the public address again.
+  route('GET', '/api/network', ({ url }) =>
+    service.getNetwork({ force: url.searchParams.get('force') === '1' })),
 ];
 
 /**

@@ -12,6 +12,7 @@ import * as terminals from './terminal-manager.js';
 import * as logStore from './log-store.js';
 import * as ports from './ports.js';
 import * as systemStats from './system-stats.js';
+import * as network from './network.js';
 import * as workspace from './workspace.js';
 import * as favicons from './favicons.js';
 import * as links from './links.js';
@@ -665,6 +666,14 @@ export const getSystemStats = async () => ({
   ...(await systemStats.sample()),
   intervalMs: SYSTEM_STATS_INTERVAL_MS,
 });
+
+// --- network -----------------------------------------------------------------------------------
+
+/**
+ * The machine's private and public addresses, and every interface's.
+ * @param {{force?: boolean}} [options] force asks for the public address again
+ */
+export const getNetwork = (options) => network.read(options);
 
 // --- favicons ----------------------------------------------------------------------------------
 

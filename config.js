@@ -174,6 +174,15 @@ export const PORT_SCAN_INTERVAL_MS = intFromEnv('PADDOCK_PORT_SCAN_INTERVAL_MS',
 /** How often connected dashboards are pushed CPU, memory and disk usage; 0 turns the meters off. */
 export const SYSTEM_STATS_INTERVAL_MS = intFromEnv('PADDOCK_SYSTEM_STATS_INTERVAL_MS', 2_000, { min: 0 });
 
+/**
+ * How often connected dashboards are checked for a changed network — another Wi-Fi, a VPN — and
+ * pushed the new addresses; 0 leaves them to change only on a reload or a Refresh.
+ */
+export const NETWORK_INTERVAL_MS = intFromEnv('PADDOCK_NETWORK_INTERVAL_MS', 5_000, { min: 0 });
+
+/** The public address is the one thing the server asks the internet for; false never asks. */
+export const PUBLIC_IP_LOOKUP = boolFromEnv('PADDOCK_PUBLIC_IP_LOOKUP', true);
+
 /** Grace an unmanaged process gets between the polite signal and the forced one. */
 export const PORT_STOP_GRACE_MS = intFromEnv('PADDOCK_PORT_STOP_GRACE_MS', 5_000);
 

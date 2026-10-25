@@ -332,6 +332,7 @@ export default function App() {
           connection={connection}
           portCount={ports.ports?.length ?? null}
           system={live.system}
+          network={live.network}
           onCreate={() => openApplicationForm()}
           onOpenPalette={() => setPaletteOpen(true)}
           collapsed={sidebar.collapsed}
@@ -395,8 +396,12 @@ export default function App() {
         {route.name === 'ports' && (
           <PortsPage
             ports={ports}
+            network={live.network}
             isBusy={(port) => busy.has(`port:${port}`)}
-            onRefresh={() => refreshPorts({ force: true })}
+            onRefresh={() => {
+              refreshPorts({ force: true });
+              live.refreshNetwork({ force: true });
+            }}
             onStopPort={stopPort}
             onProcessAction={runProcess}
           />

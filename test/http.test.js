@@ -229,6 +229,8 @@ async function startServer() {
       PADDOCK_STOP_GRACE_MS: '2000',
       // The suite installs MCP itself, on a free port — never on the developer's 4600.
       PADDOCK_MCP_AUTO_CONFIGURE: 'false',
+      // A test run asks the internet nothing.
+      PADDOCK_PUBLIC_IP_LOOKUP: 'false',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -605,6 +607,16 @@ test('GET /api/system reports CPU, memory and disk, and how often the stream rep
   assert.equal(typeof body.cpu.cores, 'number');
   assert.ok(body.memory.used <= body.memory.total);
   assert.ok(body.disk.free <= body.disk.total);
+});
+
+test('GET /api/network reports the interfaces, and a null publicIp when the lookup is off', async () => {
+  const res = await api('/api/network?force=1');
+  assert.equal(res.status, 200);
+  const body = res.json();
+  assert.equal(body.hostname, os.hostname());
+  assert.equal(body.publicIp, null);
+  assert.ok(Array.isArray(body.interfaces));
+  assert.ok(body.privateIp === null || typeof body.privateIp.address === 'string');
 });
 
 test('GET /api/workspace/directory browses a real directory by query parameter', async () => {

@@ -9,7 +9,7 @@
  * than remove it, and would break a legitimate remount.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { EVENTS_URL, getSystemStats, listApplications, listPorts, readLogs } from './api.js';
+import { EVENTS_URL, getNetwork, getSystemStats, listApplications, listPorts, readLogs } from './api.js';
 
 /** The manager's buffer is bounded, so the browser's has to be too. */
 const MAX_LOG_LINES = 2_000;
@@ -70,6 +70,9 @@ export function useLiveState(applicationId) {
   // The machine's load: the latest reading, and the recent ones the sidebar draws as a trace. Kept
   // only in the browser — a reload starting with an empty trace costs nothing.
   const [system, setSystem] = useState({ latest: null, history: [] });
+  // The machine's addresses: null until the first reading lands, which shows as "—" rather than as
+  // "no network".
+  const [network, setNetwork] = useState(null);
 
   const pushSystemSample = useCallback((sample) => {
     if (!sample?.sampledAt) return;
@@ -121,14 +124,28 @@ export function useLiveState(applicationId) {
     [reload]
   );
 
+  /**
+   * Like ports: the first fill and the explicit Refresh. A network change is noticed on the server
+   * and arrives on the stream.
+   * @param {{force?: boolean}} [options] @param {AbortSignal} [signal]
+   */
+  const refreshNetwork = useCallback(async (options = {}, signal) => {
+    try {
+      setNetwork(await getNetwork(options, signal));
+    } catch (err) {
+      if (!signal?.aborted) setError(err.message);
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     reload(controller.signal);
     refreshPorts({}, controller.signal);
+    refreshNetwork({}, controller.signal);
     // Not an error worth a banner: the meters stay empty and the next stream tick fills them.
     getSystemStats(controller.signal).then(pushSystemSample, () => {});
     return () => controller.abort();
-  }, [reload, refreshPorts, pushSystemSample]);
+  }, [reload, refreshPorts, refreshNetwork, pushSystemSample]);
 
   // Snapshot of the selected application's tail. The stream handler reads `viewedRef` so switching
   // applications never reopens the EventSource.
@@ -224,6 +241,13 @@ export function useLiveState(applicationId) {
         // keep the previous reading
       }
     });
+    source.addEventListener('network', (event) => {
+      try {
+        setNetwork(JSON.parse(event.data));
+      } catch {
+        // keep the previous reading
+      }
+    });
 
     return () => {
       clearTimeout(coalesce);
@@ -248,5 +272,7 @@ export function useLiveState(applicationId) {
     refreshPorts,
     mcp,
     system,
+    network,
+    refreshNetwork,
   };
 }

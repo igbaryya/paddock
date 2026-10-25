@@ -38,6 +38,7 @@ import {
   Minus,
   Monitor,
   Moon,
+  Network,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -95,6 +96,8 @@ const GLYPHS = {
   clock: Clock,
   // Globe: reachable from beyond this machine.
   globe: Globe,
+  // Network: the machine's own interfaces and the private address on them.
+  network: Network,
   power: Power,
   info: Info,
   database: Database,

@@ -47,6 +47,35 @@ export const formatBytes = (bytes) => {
   return `${value >= 100 || unit === 0 ? Math.round(value) : value.toFixed(1)} ${BYTE_UNITS[unit]}`;
 };
 
+/**
+ * The machine's private address, worded once for the sidebar and the ports page. `address` is set
+ * only when there is one to copy; `value` is what stands in its place, `note` where it came from.
+ * @param {object|null} network a reading from /api/network, null before the first one
+ * @returns {{address: string|null, value: string, note: string}}
+ */
+export const describePrivateIp = (network) => {
+  if (!network) return { address: null, value: '—', note: 'Waiting for the first reading…' };
+  const { privateIp } = network;
+  if (!privateIp) return { address: null, value: 'offline', note: 'No route off this machine' };
+  const via = privateIp.interface ? ` on ${privateIp.interface}` : '';
+  return { address: privateIp.address, value: privateIp.address, note: `Private IP${via}, the default route` };
+};
+
+/**
+ * The public address, worded the same way. A lookup that is turned off and one that got no answer
+ * read differently: one is a choice, the other is worth a second look.
+ * @param {object|null} network
+ * @returns {{address: string|null, value: string, note: string}}
+ */
+export const describePublicIp = (network) => {
+  if (!network) return { address: null, value: '—', note: 'Waiting for the first reading…' };
+  const { publicIp } = network;
+  if (!publicIp) return { address: null, value: 'off', note: 'Public IP lookup is turned off' };
+  const at = new Date(publicIp.checkedAt).toLocaleTimeString();
+  if (!publicIp.address) return { address: null, value: 'unavailable', note: `Could not reach Cloudflare at ${at}` };
+  return { address: publicIp.address, value: publicIp.address, note: `Public IP, as Cloudflare saw it at ${at}` };
+};
+
 /** @param {object} process a ProcessView @returns {string|null} null when it never exited */
 export const exitSummary = (process) => {
   if (process.exitSignal) return `exit on ${process.exitSignal}`;

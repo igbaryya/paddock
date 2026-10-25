@@ -162,6 +162,20 @@ export const stopPort = (port) => request('POST', `/ports/${port}/stop`);
 export const getSystemStats = (signal) => request('GET', '/system', { signal });
 
 /**
+ * The machine's private and public addresses, and every interface's. `force` asks the manager to
+ * look the public address up again rather than answer from its cache. A change after this arrives
+ * as a `network` event on the stream.
+ * @param {{force?: boolean}} [options] @param {AbortSignal} [signal]
+ * @returns {Promise<{readAt: string, hostname: string,
+ *   privateIp: {address: string, interface: string|null}|null,
+ *   publicIp: {address: string|null, checkedAt: string}|null,
+ *   interfaces: {name: string, mac: string|null, primary: boolean,
+ *     addresses: {family: string, address: string, cidr: string|null}[]}[]}>}
+ */
+export const getNetwork = ({ force = false } = {}, signal) =>
+  request('GET', `/network${force ? '?force=1' : ''}`, { signal });
+
+/**
  * Every cached favicon as a data URL, keyed by process id. Fetched only when the versions carried on
  * the application list change, never on every refetch of that list.
  * @param {AbortSignal} [signal]

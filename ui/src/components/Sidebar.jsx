@@ -12,6 +12,7 @@ import StatusDot from './StatusDot.jsx';
 import Icon, { Logo } from './Icon.jsx';
 import ThemeSwitcher from './ThemeSwitcher.jsx';
 import SystemMeters from './SystemMeters.jsx';
+import NetworkSummary from './NetworkSummary.jsx';
 import { Link, paths } from '../router.jsx';
 import { useDesktopUpdates } from '../useDesktopUpdates.js';
 import { formatCombo } from '../shortcuts.js';
@@ -51,7 +52,7 @@ function NavItem({ to, icon, label, active, count, collapsed }) {
 
 /**
  * @param {{applications: object[], route: object, connection: string, portCount: number|null,
- *          system: {latest: object|null, history: object[]},
+ *          system: {latest: object|null, history: object[]}, network: object|null,
  *          onCreate: () => void, onOpenPalette: () => void, collapsed: boolean,
  *          onToggleCollapsed: () => void}} props
  */
@@ -61,6 +62,7 @@ export default function Sidebar({
   connection,
   portCount,
   system,
+  network,
   onCreate,
   onOpenPalette,
   collapsed,
@@ -154,6 +156,7 @@ export default function Sidebar({
       {/* The always-there controls, pinned together so each is one click from any page. */}
       <div className="sidebar-foot">
         <SystemMeters system={system} stale={connection !== 'live'} />
+        <NetworkSummary network={network} stale={connection !== 'live'} />
         {updateReady && (
           <Link
             to={paths.settings()}

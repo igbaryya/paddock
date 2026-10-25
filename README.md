@@ -567,6 +567,8 @@ full buffer does not lay out every row on every incoming batch.
 | `PADDOCK_PORT_SCAN_TTL_MS` | `3000` |
 | `PADDOCK_PORT_SCAN_INTERVAL_MS` | `5000` (0 disables background scanning) |
 | `PADDOCK_SYSTEM_STATS_INTERVAL_MS` | `2000` — CPU/memory/disk meters in the sidebar (0 turns them off) |
+| `PADDOCK_NETWORK_INTERVAL_MS` | `5000` — how often a changed network is noticed (0: only on reload or Refresh) |
+| `PADDOCK_PUBLIC_IP_LOOKUP` | `true` — set `false` to never ask `1.1.1.1` for the public IP |
 | `PADDOCK_PORT_STOP_GRACE_MS` | `5000` |
 | `PADDOCK_PG_STATEMENT_TIMEOUT_MS` | `15000` — per statement from a database tool |
 | `PADDOCK_PG_CONNECT_TIMEOUT_MS` | `5000` |

@@ -5,11 +5,15 @@
  * The filter is the reason this is a page rather than a panel: on a working developer's machine
  * this table is thirty rows of editors, Docker and language servers, and the one you care about is
  * found by typing a port number.
+ *
+ * The machine's addresses sit above the table, because "reachable off-machine" raises the next
+ * question at once: reachable at what?
  */
 import { useMemo, useState } from 'react';
 import PortsTable from '../components/PortsTable.jsx';
 import Segmented from '../components/Segmented.jsx';
 import Icon from '../components/Icon.jsx';
+import NetworkPanel from '../components/NetworkPanel.jsx';
 import Stat from '../components/Stat.jsx';
 import Toolbar from '../components/Toolbar.jsx';
 
@@ -20,10 +24,10 @@ const FILTERS = [
 ];
 
 /**
- * @param {{ports: object, isBusy: (port: number) => boolean, onRefresh: Function,
- *          onStopPort: Function, onProcessAction: Function}} props
+ * @param {{ports: object, network: object|null, isBusy: (port: number) => boolean,
+ *          onRefresh: Function, onStopPort: Function, onProcessAction: Function}} props
  */
-export default function PortsPage({ ports, isBusy, onRefresh, onStopPort, onProcessAction }) {
+export default function PortsPage({ ports, network, isBusy, onRefresh, onStopPort, onProcessAction }) {
   const [query, setQuery] = useState('');
   const [only, setOnly] = useState('all');
 
@@ -89,6 +93,8 @@ export default function PortsPage({ ports, isBusy, onRefresh, onStopPort, onProc
           <span>{note}</span>
         </p>
       ))}
+
+      <NetworkPanel network={network} />
 
       <section className="panel ports">
         <div className="panel-head">

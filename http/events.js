@@ -18,11 +18,13 @@
  *                   leaves, and `{kind: 'call', call}` for every tool call an agent makes
  *   `system`        `{sampledAt, cpu, memory, disk, intervalMs}` on every tick, changed or not —
  *                   the meters are a live trace, and a repeated value is still a reading
+ *   `network`       `{readAt, hostname, privateIp, publicIp, interfaces}` — pushed only when an
+ *                   address changes: joining another network, a VPN going up or down
  */
 import { events as serviceEvents } from '../service.js';
 import * as service from '../service.js';
 import * as sse from './sse.js';
-import { PORT_SCAN_INTERVAL_MS, SYSTEM_STATS_INTERVAL_MS } from '../config.js';
+import { NETWORK_INTERVAL_MS, PORT_SCAN_INTERVAL_MS, SYSTEM_STATS_INTERVAL_MS } from '../config.js';
 
 const LOG_BATCH_MS = 50;
 const MAX_BATCH_ENTRIES = 500;
@@ -34,8 +36,11 @@ let started = false;
 let logTimer = null;
 let portTimer = null;
 let systemTimer = null;
+let networkTimer = null;
 let sampling = false;
+let readingNetwork = false;
 let lastPortFingerprint = null;
+let lastNetworkFingerprint = null;
 let pendingLogs = [];
 
 function broadcast(type, payload) {
@@ -130,6 +135,28 @@ async function sampleSystem() {
 }
 
 /**
+ * Polled for the same reason ports are — nothing announces a network switch — and pushed only on
+ * change, for the same reason too. The fingerprint leaves out the timestamps: a public address
+ * re-checked and found the same is not news.
+ */
+async function checkNetwork() {
+  if (!clients.size || readingNetwork) return;
+  readingNetwork = true;
+  try {
+    const reading = await service.getNetwork();
+    const { hostname, privateIp, publicIp, interfaces } = reading;
+    const fingerprint = JSON.stringify([hostname, privateIp, publicIp?.address, interfaces]);
+    if (fingerprint === lastNetworkFingerprint) return;
+    lastNetworkFingerprint = fingerprint;
+    broadcast('network', reading);
+  } catch (err) {
+    console.error('[paddock] network read failed:', err.message);
+  } finally {
+    readingNetwork = false;
+  }
+}
+
+/**
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  */
@@ -156,6 +183,10 @@ export function start() {
     systemTimer = setInterval(sampleSystem, SYSTEM_STATS_INTERVAL_MS);
     systemTimer.unref();
   }
+  if (NETWORK_INTERVAL_MS > 0) {
+    networkTimer = setInterval(checkNetwork, NETWORK_INTERVAL_MS);
+    networkTimer.unref();
+  }
 }
 
 /** Unsubscribe, cancel the timers, and close every stream cleanly for shutdown. */
@@ -170,7 +201,10 @@ export function stop() {
   portTimer = null;
   clearInterval(systemTimer);
   systemTimer = null;
+  clearInterval(networkTimer);
+  networkTimer = null;
   lastPortFingerprint = null;
+  lastNetworkFingerprint = null;
   clearTimeout(logTimer);
   logTimer = null;
   pendingLogs = [];

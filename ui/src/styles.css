@@ -626,7 +626,8 @@ textarea {
 
 /* The machine's load. Rows share the sidebar's 16px glyph column; the colour is green until a
    figure is worth noticing, and the label and trace stay quiet so the number carries it. */
-.system-meters {
+.system-meters,
+.network-summary {
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -634,11 +635,13 @@ textarea {
   transition: opacity 0.2s ease;
 }
 
-.system-meters .sidebar-label {
+.system-meters .sidebar-label,
+.network-summary .sidebar-label {
   margin-bottom: 2px;
 }
 
-.system-meters.stale {
+.system-meters.stale,
+.network-summary.stale {
   opacity: 0.45;
 }
 
@@ -713,6 +716,51 @@ textarea {
   border-radius: inherit;
   background: var(--meter-color);
   transition: width 0.4s ease;
+}
+
+/* The machine's addresses, under its load and on the same grid: glyph, label, then the figure. */
+.address-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 16px 42px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+}
+
+.address-row .icon {
+  color: var(--accent);
+}
+
+.address-label {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.address-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A public address barely fits the rail, so the copy button takes no column of its own: it appears
+   over the row's end only while the row is the one being looked at, and the address gives way. */
+.address-row .copy-button {
+  position: absolute;
+  right: 4px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.address-row:is(:hover, :focus-within) .copy-button {
+  opacity: 1;
+}
+
+.address-row:is(:hover, :focus-within) .address-value {
+  padding-right: 26px;
 }
 
 /* --- toolbar --------------------------------------------------------------------------------- */
@@ -806,9 +854,18 @@ html.desktop-mac .sidebar-top .sidebar-toggle {
     .app-count,
     .conn-label,
     .meter-label,
-    .meter-graph
+    .meter-graph,
+    .address-label,
+    .address-value,
+    .address-row .copy-button
   ) {
     display: none;
+  }
+
+  /* An address does not fit the rail, so each row is its glyph alone; the tooltip has the address. */
+  html[data-sidebar='collapsed'] .address-row {
+    display: flex;
+    justify-content: center;
   }
 
   /* Each meter becomes its glyph over its figure; the tooltip still has the detail. */
@@ -2981,14 +3038,16 @@ p.card-processes {
 /* The OS's list style: no rules between cells, a faint stripe on every other row, and a hover that
    takes the whole row with rounded ends. */
 .ports-table,
-.sql-table {
+.sql-table,
+.network-table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 12.5px;
 }
 
 .ports-table th,
-.sql-table th {
+.sql-table th,
+.network-table th {
   position: sticky;
   top: 0;
   z-index: 1;
@@ -3003,7 +3062,8 @@ p.card-processes {
 }
 
 .ports-table td,
-.sql-table td {
+.sql-table td,
+.network-table td {
   padding: 6px 12px;
   vertical-align: middle;
 }
@@ -3013,8 +3073,49 @@ p.card-processes {
   padding: 0 6px 6px;
 }
 
-.ports-table {
+.ports-table,
+.network-table {
   width: 100%;
+}
+
+/* --- network panel --------------------------------------------------------------------------- */
+
+/* The two addresses side by side while there is room, each with where it came from beside it. */
+.network-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  border-bottom: 1px solid var(--separator);
+}
+
+.network-facts .fact + .fact {
+  border-top: 0;
+}
+
+.network-facts .fact code {
+  flex: none;
+  font-weight: 600;
+}
+
+.fact-note {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.network-table .tag {
+  margin-left: var(--space-2);
+}
+
+.interface-addresses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--space-3);
+}
+
+.interface-addresses code,
+.network-table td.mono {
+  font-size: 11.5px;
 }
 
 .port-row:nth-child(even of .port-row) > td,
@@ -5408,6 +5509,15 @@ p.card-processes {
   :root {
     --sidebar-width: 208px;
     --drawer-width: 380px;
+  }
+
+  /* The narrower rail is a few pixels short of a full-length IPv4 address at the usual size. */
+  .address-row {
+    gap: 4px;
+  }
+
+  .address-value {
+    font-size: 11px;
   }
 }
 
